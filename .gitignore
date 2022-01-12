@@ -1,0 +1,21 @@
+# Nodejs ignores
+node_modules/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+.npm
+*.tsbuildinfo
+.cache/
+.yarn/
+
+# Rust ignores
+debug/
+target/
+Cargo.lock
+**/*.rs.bk
+*.pdb
+
+# Other repos
+vite-plugin-vue2
