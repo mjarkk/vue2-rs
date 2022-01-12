@@ -14,7 +14,9 @@ h1
 ";
 
 fn main() {
-    Parser::parse(input);
+    if let Err(e) = Parser::parse(input) {
+        panic!("{}", e.to_string());
+    }
 }
 
 struct Parser {
@@ -52,11 +54,21 @@ impl Parser {
     fn execute(&mut self) -> Result<(), String> {
         while let Some(b) = self.read_byte() {
             match b {
-                ' ' => {},
-                '<' => {},
-                c => return Err(format!("found invalid character in source: {}, expected <template ..> <script ..> or <style ..>", c.to_string() )),
+                ' ' | '\t' | '\n' | '\r' => {},
+                '<' => {self.parseTopLevelTag()?;},
+                c => return Err(format!("found invalid character in source: '{}', expected <template ..> <script ..> or <style ..>", c.to_string() )),
             };
         }
         Ok(())
     }
+    fn parseTopLevelTag(&mut self) -> Result<TopLevelTag, String> {
+        // TODO
+        Ok(TopLevelTag::Script)
+    }
+}
+
+enum TopLevelTag {
+    Template,
+    Script,
+    Style,
 }
