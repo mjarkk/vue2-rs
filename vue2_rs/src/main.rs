@@ -30,9 +30,28 @@ pub struct Parser {
     pub source_chars: Vec<char>,
     pub source_chars_len: usize,
     pub current_char: usize,
-    pub template: Option<SourceLocation>,
-    pub script: Option<SourceLocation>,
-    pub styles: Vec<SourceLocation>,
+    pub template: Option<Template>,
+    pub script: Option<Script>,
+    pub styles: Vec<Style>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Script {
+    pub lang: Option<SourceLocation>,
+    pub content: SourceLocation,
+}
+
+#[derive(Debug, Clone)]
+pub struct Template {
+    pub lang: Option<SourceLocation>,
+    pub content: SourceLocation,
+}
+
+#[derive(Debug, Clone)]
+pub struct Style {
+    pub lang: Option<SourceLocation>,
+    pub scoped: bool,
+    pub content: SourceLocation,
 }
 
 impl Parser {
@@ -80,6 +99,7 @@ impl Parser {
                         TagType::OpenAndClose => return Err(ParserError::new("execute", "tag type not allowed on top level")),
                         TagType::Open => {},
                     };
+                    let (_, lang) = top_level_tag.1.arg(self, "lang");
 
                     match top_level_tag.0 {
                         TopLevelTag::Template => {
@@ -88,7 +108,12 @@ impl Parser {
                             }
                             let template_start = self.current_char;
                             let SourceLocation(template_end, _) = self.look_for("</template>".chars().collect())?;
-                            self.template = Some(SourceLocation(template_start, template_end));
+
+
+                            self.template = Some(Template{
+                                lang,
+                                content: SourceLocation(template_start, template_end),
+                            });
                         },
                         TopLevelTag::Script => {
                             if self.script.is_some() {
@@ -96,12 +121,22 @@ impl Parser {
                             }
                             let script_start = self.current_char;
                             let SourceLocation(script_end, _) = self.look_for("</script>".chars().collect())?;
-                            self.script = Some(SourceLocation(script_start, script_end));
+                            self.script = Some(Script{
+                                lang,
+                                content: SourceLocation(script_start, script_end),
+                            });
                         },
                         TopLevelTag::Style => {
                             let style_start = self.current_char;
                             let SourceLocation(style_end, _) = self.look_for("</style>".chars().collect())?;
-                            self.styles.push(SourceLocation(style_start, style_end));
+
+                            let (scoped, _) =  top_level_tag.1.arg(self, "scoped");
+
+                            self.styles.push(Style{
+                                lang,
+                                scoped,
+                                content: SourceLocation(style_start, style_end),
+                            });
                         },
                     }
                 },
@@ -291,8 +326,6 @@ impl Parser {
                                 }
                                 _ => {}
                             }
-
-                            break;
                         }
                         self.current_char -= 1;
                         SourceLocation(start, self.current_char)
@@ -336,13 +369,24 @@ pub struct Tag {
     args: Vec<TagArg>,
 }
 
+impl Tag {
+    fn arg(&self, parser: &Parser, key: &str) -> (bool, Option<SourceLocation>) {
+        for arg in self.args.iter() {
+            if arg.key.eq(parser, &mut key.chars()) {
+                return (true, arg.value.clone());
+            }
+        }
+        (false, None)
+    }
+}
+
 #[derive(Debug)]
 pub struct TagArg {
     pub key: SourceLocation,
     pub value: Option<SourceLocation>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SourceLocation(usize, usize);
 
 impl SourceLocation {

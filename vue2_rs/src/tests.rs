@@ -16,7 +16,7 @@ mod tests {
         let result = Parser::parse("<template><h1>hello</h1></template>").unwrap();
 
         assert_eq!(
-            result.template.as_ref().unwrap().string(&result),
+            result.template.as_ref().unwrap().content.string(&result),
             "<h1>hello</h1>",
         );
         assert!(result.script.is_none());
@@ -29,7 +29,7 @@ mod tests {
 
         assert!(result.template.is_none());
         assert_eq!(
-            result.script.as_ref().unwrap().string(&result),
+            result.script.as_ref().unwrap().content.string(&result),
             "module.exports = {}"
         );
         assert_eq!(result.styles.len(), 0);
@@ -43,7 +43,7 @@ mod tests {
         assert!(result.script.is_none());
         assert_eq!(result.styles.len(), 1);
         assert_eq!(
-            result.styles.get(0).unwrap().string(&result),
+            result.styles.get(0).unwrap().content.string(&result),
             "a {color: red;}"
         );
     }
@@ -53,30 +53,31 @@ mod tests {
         let input = "
             <template><h1>Hello world</h1></template>
 
-            <script>module.exports = {}</script>
+            <script lang='ts'>module.exports = {}</script>
 
             <style scoped>h1 {color: red;}</style>
-            <style>h2 {color: red;}</style>
+            <style lang=scss>h2 {color: red;}</style>
         ";
 
         let result = Parser::parse(input).unwrap();
 
         assert_eq!(
-            result.template.as_ref().unwrap().string(&result),
+            result.template.as_ref().unwrap().content.string(&result),
             "<h1>Hello world</h1>"
         );
         assert_eq!(
-            result.script.as_ref().unwrap().string(&result),
+            result.script.as_ref().unwrap().content.string(&result),
             "module.exports = {}"
         );
-        assert_eq!(
-            result.styles.get(0).unwrap().string(&result),
-            "h1 {color: red;}"
-        );
-        assert_eq!(
-            result.styles.get(1).unwrap().string(&result),
-            "h2 {color: red;}"
-        );
+        let style_1 = result.styles.get(0).unwrap();
+        assert_eq!(style_1.content.string(&result), "h1 {color: red;}");
+        assert!(style_1.lang.is_none());
+        assert!(style_1.scoped);
+
+        let style_2 = result.styles.get(1).unwrap();
+        assert_eq!(style_2.content.string(&result), "h2 {color: red;}");
+        assert_eq!(style_2.lang.clone().unwrap().string(&result), "scss");
+        assert!(!style_2.scoped);
     }
 
     #[test]
