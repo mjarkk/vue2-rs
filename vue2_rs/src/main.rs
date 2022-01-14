@@ -84,7 +84,7 @@ impl Parser {
                     match top_level_tag.0 {
                         TopLevelTag::Template => {
                             if self.template.is_some() {
-                                return Err(ParserError::new("execute", "you cannot have multiple templates in your code"));
+                                return Err(ParserError::new("execute", "can't have multiple templates in your code"));
                             }
                             let template_start = self.current_char;
                             let SourceLocation(template_end, _) = self.look_for("</template>".chars().collect())?;
@@ -92,7 +92,7 @@ impl Parser {
                         },
                         TopLevelTag::Script => {
                             if self.script.is_some() {
-                                return Err(ParserError::new("execute", "you cannot have multiple scripts in your code"));
+                                return Err(ParserError::new("execute", "can't have multiple scripts in your code"));
                             }
                             let script_start = self.current_char;
                             let SourceLocation(script_end, _) = self.look_for("</script>".chars().collect())?;

@@ -4,7 +4,7 @@ use std::fmt;
 #[derive(Debug)]
 pub struct ParserError {
     method: &'static str,
-    message: String,
+    pub message: String,
 }
 
 const ERR_EOF: &'static str = "Unexpected EOF";

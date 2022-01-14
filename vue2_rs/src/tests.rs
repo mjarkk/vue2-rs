@@ -78,4 +78,30 @@ mod tests {
             "h2 {color: red;}"
         );
     }
+
+    #[test]
+    fn cannot_have_multiple_templates() {
+        let result = Parser::parse(
+            "<template></template>
+            <template></template>",
+        );
+
+        assert_eq!(
+            result.unwrap_err().message,
+            "can't have multiple templates in your code"
+        );
+    }
+
+    #[test]
+    fn cannot_have_multiple_scripts() {
+        let result = Parser::parse(
+            "<script></script>
+            <script></script>",
+        );
+
+        assert_eq!(
+            result.unwrap_err().message,
+            "can't have multiple scripts in your code"
+        );
+    }
 }
