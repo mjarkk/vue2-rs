@@ -1,4 +1,5 @@
 pub mod error;
+pub mod tests;
 
 use error::ParserError;
 
@@ -18,30 +19,32 @@ h1
 ";
 
 fn main() {
-    if let Err(e) = Parser::parse(INPUT) {
-        panic!("{}", e.to_string());
+    match Parser::parse(INPUT) {
+        Err(e) => panic!("{}", e.to_string()),
+        Ok(v) => println!("{:#?}", v),
     }
 }
 
-struct Parser {
-    source_chars: Vec<char>,
-    source_chars_len: usize,
-    current_char: usize,
-    template: usize,
-    script: usize,
-    styles: Vec<usize>,
+#[derive(Debug)]
+pub struct Parser {
+    pub source_chars: Vec<char>,
+    pub source_chars_len: usize,
+    pub current_char: usize,
+    pub template: Option<SourceLocation>,
+    pub script: Option<SourceLocation>,
+    pub styles: Vec<SourceLocation>,
 }
 
 impl Parser {
-    fn parse(source: &str) -> Result<Self, ParserError> {
+    pub fn parse(source: &str) -> Result<Self, ParserError> {
         let source_chars: Vec<char> = source.chars().collect();
         let source_chars_len = source_chars.len();
         let mut p = Self {
             source_chars,
             source_chars_len,
             current_char: 0,
-            template: 0,
-            script: 0,
+            template: None,
+            script: None,
             styles: Vec::new(),
         };
         p.execute()?;
@@ -61,10 +64,10 @@ impl Parser {
     }
     fn read_one_skip_spacing(&mut self) -> Option<char> {
         loop {
-            match self.read_one()? {
-                ' ' | '\t' | '\n' | '\r' => {}
-                c => return Some(c),
-            };
+            let c = self.read_one()?;
+            if !is_space(c) {
+                return Some(c);
+            }
         }
     }
     fn execute(&mut self) -> Result<(), ParserError> {
@@ -72,18 +75,33 @@ impl Parser {
             match b {
                 '<' => {
                     let top_level_tag = self.parse_top_level_tag()?;
+                    match top_level_tag.1.type_ {
+                        TagType::Close => return Err(ParserError::new("execute", "found tag closure without open")),
+                        TagType::OpenAndClose => return Err(ParserError::new("execute", "tag type not allowed on top level")),
+                        TagType::Open => {},
+                    };
+
                     match top_level_tag.0 {
                         TopLevelTag::Template => {
-                            // TODO look for template closure
-                            todo!("found template tag");
+                            if self.template.is_some() {
+                                return Err(ParserError::new("execute", "you cannot have multiple templates in your code"));
+                            }
+                            let template_start = self.current_char;
+                            let SourceLocation(template_end, _) = self.look_for("</template>".chars().collect())?;
+                            self.template = Some(SourceLocation(template_start, template_end));
                         },
                         TopLevelTag::Script => {
-                            // TODO look for script closure
-                            todo!("found script tag");
+                            if self.script.is_some() {
+                                return Err(ParserError::new("execute", "you cannot have multiple scripts in your code"));
+                            }
+                            let script_start = self.current_char;
+                            let SourceLocation(script_end, _) = self.look_for("</script>".chars().collect())?;
+                            self.script = Some(SourceLocation(script_start, script_end));
                         },
                         TopLevelTag::Style => {
-                            // TODO look for style closure
-                            todo!("found style tag");
+                            let style_start = self.current_char;
+                            let SourceLocation(style_end, _) = self.look_for("</style>".chars().collect())?;
+                            self.styles.push(SourceLocation(style_start, style_end));
                         },
                     }
                 },
@@ -92,19 +110,47 @@ impl Parser {
         }
         Ok(())
     }
+    fn look_for(&mut self, data: Vec<char>) -> Result<SourceLocation, ParserError> {
+        let data_len = data.len();
+        if data_len == 0 {
+            return Err(ParserError::new(
+                "look_for",
+                "cannot look for zero length data",
+            ));
+        }
+        'outerLoop: loop {
+            let c = self.read_one().ok_or(ParserError::eof("look_for"))?;
+            if c != data[0] {
+                continue;
+            }
+
+            let start_index = self.current_char - 1;
+            for idx in 1..data_len {
+                let c = self.read_one().ok_or(ParserError::eof("look_for"))?;
+                if c != data[idx] {
+                    continue 'outerLoop;
+                }
+            }
+            return Ok(SourceLocation(start_index, self.current_char));
+        }
+    }
     fn parse_top_level_tag(&mut self) -> Result<(TopLevelTag, Tag), ParserError> {
         let parsed_tag = self.parse_tag()?;
 
-        let top_level_tag = match parsed_tag.name(self) {
-            ['t', 'e', 'm', 'p', 'l', 'a', 't', 'e'] => TopLevelTag::Template,
-            ['s', 'c', 'r', 'i', 'p', 't'] => TopLevelTag::Script,
-            ['s', 't', 'y', 'l', 'e'] => TopLevelTag::Style,
-            _ => {
-                return Err(ParserError::new(
-                    "parse_top_level_tag",
-                    format!("unknown top level tag <{}>", parsed_tag.name_string(self)),
-                ))
-            }
+        let top_level_tag = if parsed_tag.name.eq(self, &mut "template".chars()) {
+            TopLevelTag::Template
+        } else if parsed_tag.name.eq(self, &mut "script".chars()) {
+            TopLevelTag::Script
+        } else if parsed_tag.name.eq(self, &mut "style".chars()) {
+            TopLevelTag::Style
+        } else {
+            return Err(ParserError::new(
+                "parse_top_level_tag",
+                format!(
+                    "tag <{}> is not allowed on the top level ",
+                    parsed_tag.name.string(self)
+                ),
+            ));
         };
 
         Ok((top_level_tag, parsed_tag))
@@ -113,7 +159,7 @@ impl Parser {
         &mut self,
         first_char: Option<char>,
         no_name_err: String,
-    ) -> Result<(Name, char), ParserError> {
+    ) -> Result<(SourceLocation, char), ParserError> {
         let mut start = self.current_char;
 
         let mut c = match first_char {
@@ -135,7 +181,7 @@ impl Parser {
 
             match c {
                 'a'..='z' | 'A'..='Z' | '0'..='9' | '_' => {}
-                c => return Ok((Name(start, self.current_char), c)),
+                c => return Ok((SourceLocation(start, self.current_char - 1), c)),
             }
         }
     }
@@ -144,9 +190,8 @@ impl Parser {
     fn parse_tag(&mut self) -> Result<Tag, ParserError> {
         let mut tag = Tag {
             type_: TagType::Open,
-            name_start: self.current_char,
+            name: SourceLocation(self.current_char, 0),
             args: Vec::new(),
-            name_end: 0,
         };
 
         let mut is_close_tag = false;
@@ -166,7 +211,7 @@ impl Parser {
                 'a'..='z' | 'A'..='Z' | '0'..='9' => {}
                 _ => {
                     self.current_char -= 1;
-                    tag.name_end = self.current_char;
+                    tag.name.1 = self.current_char;
                     break;
                 }
             };
@@ -188,6 +233,7 @@ impl Parser {
                             .read_one_skip_spacing()
                             .ok_or(ParserError::eof("parse_tag tag closure"))?;
                         if c == '>' {
+                            tag.type_ = TagType::OpenAndClose;
                             Ok(tag)
                         } else {
                             Err(ParserError::new(
@@ -197,46 +243,127 @@ impl Parser {
                         }
                     }
                 }
-                c => {
-                    let (_, c) =
-                        self.parse_name(Some(c), format!("unexpected character '{}'", c))?;
-                    if c != '=' {
+                _ => {}
+            }
+
+            let (key_location, mut c) =
+                self.parse_name(Some(c), format!("unexpected character '{}'", c))?;
+
+            let value_location = if c != '=' {
+                self.current_char -= 1;
+                None
+            } else {
+                // Parse arg value
+                c = self
+                    .read_one()
+                    .ok_or(ParserError::eof("parse_tag arg value"))?;
+
+                let value_location = match c {
+                    '>' => return Ok(tag),
+                    '/' => {
+                        self.current_char -= 1;
                         continue;
                     }
+                    '"' => {
+                        let start = self.current_char;
+                        self.parse_quotes(QuoteKind::HTMLDouble)?;
+                        SourceLocation(start, self.current_char - 1)
+                    }
+                    '\'' => {
+                        let start = self.current_char;
+                        self.parse_quotes(QuoteKind::HTMLSingle)?;
+                        SourceLocation(start, self.current_char - 1)
+                    }
+                    c if is_space(c) => continue,
+                    _ => {
+                        let start = self.current_char - 1;
+                        loop {
+                            c = self
+                                .read_one()
+                                .ok_or(ParserError::eof("parse_tag arg value"))?;
 
-                    // Parse arg value
+                            match c {
+                                '>' | '/' => {
+                                    break;
+                                }
+                                c if is_space(c) => {
+                                    break;
+                                }
+                                _ => {}
+                            }
 
-                    return Err(ParserError::new(
-                        "parse_tag",
-                        format!("TODO parse arg value '{}'", c),
-                    ));
-                }
+                            break;
+                        }
+                        self.current_char -= 1;
+                        SourceLocation(start, self.current_char)
+                    }
+                };
+
+                Some(value_location)
+            };
+
+            tag.args.push(TagArg {
+                key: key_location,
+                value: value_location,
+            });
+        }
+    }
+    fn parse_quotes(&mut self, kind: QuoteKind) -> Result<(), ParserError> {
+        let quote_char = match kind {
+            QuoteKind::HTMLDouble => '"',
+            QuoteKind::HTMLSingle => '\'',
+        };
+
+        loop {
+            let c = self.read_one().ok_or(ParserError::eof("parse_quote"))?;
+            if c == quote_char {
+                return Ok(());
             }
         }
     }
 }
 
 #[derive(Debug)]
-struct Tag {
-    type_: TagType,
-
-    // name_start indicates the tag name start character index in the source
-    name_start: usize,
-    // name_end indicates the tag name end character index in the source
-    name_end: usize,
-
-    args: Vec<(Name, String)>,
+enum QuoteKind {
+    HTMLDouble, // "
+    HTMLSingle, // '
 }
 
 #[derive(Debug)]
-struct Name(usize, usize);
+pub struct Tag {
+    type_: TagType,
+    name: SourceLocation,
+    args: Vec<TagArg>,
+}
 
-impl Tag {
-    pub fn name<'a>(&self, parser: &'a Parser) -> &'a [char] {
-        &parser.source_chars[self.name_start..self.name_end]
+#[derive(Debug)]
+pub struct TagArg {
+    pub key: SourceLocation,
+    pub value: Option<SourceLocation>,
+}
+
+#[derive(Debug)]
+pub struct SourceLocation(usize, usize);
+
+impl SourceLocation {
+    pub fn chars<'a>(&self, parser: &'a Parser) -> &'a [char] {
+        &parser.source_chars[self.0..self.1]
     }
-    pub fn name_string(&self, parser: &Parser) -> String {
-        self.name(parser).iter().collect()
+    pub fn string(&self, parser: &Parser) -> String {
+        self.chars(parser).iter().collect()
+    }
+    pub fn len(&self) -> usize {
+        self.1 - self.0
+    }
+    pub fn eq(&self, parser: &Parser, other: &mut impl Iterator<Item = char>) -> bool {
+        let mut self_iter = self.chars(parser).iter();
+        loop {
+            match (self_iter.next(), other.next()) {
+                (Some(a), Some(b)) if *a == b => continue,
+                (None, None) => return true,
+                _ => return false,
+            }
+        }
     }
 }
 
@@ -252,4 +379,11 @@ enum TopLevelTag {
     Template,
     Script,
     Style,
+}
+
+fn is_space(c: char) -> bool {
+    match c {
+        ' ' | '\t' | '\n' | '\r' => true,
+        _ => false,
+    }
 }
