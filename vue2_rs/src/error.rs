@@ -25,7 +25,6 @@ impl error::Error for ParserError {}
 
 impl fmt::Display for ParserError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{} (method {})", self.message, self.method);
-        Ok(())
+        write!(f, "{} (method {})", self.message, self.method)
     }
 }

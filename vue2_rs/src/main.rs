@@ -61,8 +61,6 @@ impl Parser {
     }
     fn read_one_skip_spacing(&mut self) -> Option<char> {
         loop {
-            self.read_one()?;
-
             match self.read_one()? {
                 ' ' | '\t' | '\n' | '\r' => {}
                 c => return Some(c),
@@ -73,7 +71,21 @@ impl Parser {
         while let Some(b) = self.read_one_skip_spacing() {
             match b {
                 '<' => {
-                    println!("{:?}", self.parse_top_level_tag()?);
+                    let top_level_tag = self.parse_top_level_tag()?;
+                    match top_level_tag.0 {
+                        TopLevelTag::Template => {
+                            // TODO look for template closure
+                            todo!("found template tag");
+                        },
+                        TopLevelTag::Script => {
+                            // TODO look for script closure
+                            todo!("found script tag");
+                        },
+                        TopLevelTag::Style => {
+                            // TODO look for style closure
+                            todo!("found style tag");
+                        },
+                    }
                 },
                 c => return Err(ParserError::new("execute", format!("found invalid character in source: '{}', expected <template ..> <script ..> or <style ..>", c))),
             };
@@ -111,23 +123,19 @@ impl Parser {
             }
             None => self.read_one().ok_or(ParserError::eof("parse_name"))?,
         };
-        if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' {
-            // do nothing
-        } else {
-            return Err(ParserError::new("parse_name", no_name_err));
+        match c {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '_' => {
+                // do nothing
+            }
+            _ => return Err(ParserError::new("parse_name", no_name_err)),
         }
 
         loop {
             c = self.read_one().ok_or(ParserError::eof("parse_name"))?;
 
-            if (c >= 'a' && c <= 'z')
-                || (c >= 'A' && c <= 'Z')
-                || (c >= '0' && c <= '9')
-                || c == '_'
-            {
-                continue;
-            } else {
-                return Ok((Name(start, self.current_char), c));
+            match c {
+                'a'..='z' | 'A'..='Z' | '0'..='9' | '_' => {}
+                c => return Ok((Name(start, self.current_char), c)),
             }
         }
     }
@@ -142,7 +150,9 @@ impl Parser {
         };
 
         let mut is_close_tag = false;
-        let mut c = self.seek_one().ok_or(ParserError::eof("parse_tag"))?;
+        let mut c = self
+            .seek_one()
+            .ok_or(ParserError::eof("parse_tag check closure tag"))?;
         if c == '/' {
             tag.type_ = TagType::Close;
             self.current_char += 1;
@@ -151,13 +161,15 @@ impl Parser {
 
         // Parse names
         loop {
-            c = self.read_one().ok_or(ParserError::eof("parse_tag"))?;
-            if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z' || (c >= '0' || c <= '9')) {
-                continue;
-            }
-            self.current_char -= 1;
-            tag.name_end = self.current_char;
-            break;
+            c = self.read_one().ok_or(ParserError::eof("parse_tag name"))?;
+            match c {
+                'a'..='z' | 'A'..='Z' | '0'..='9' => {}
+                _ => {
+                    self.current_char -= 1;
+                    tag.name_end = self.current_char;
+                    break;
+                }
+            };
         }
 
         // Parse args
@@ -165,6 +177,7 @@ impl Parser {
             c = self
                 .read_one_skip_spacing()
                 .ok_or(ParserError::eof("parse_tag args"))?;
+
             match c {
                 '>' => return Ok(tag),
                 '/' => {
