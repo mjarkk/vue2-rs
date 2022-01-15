@@ -1,3 +1,4 @@
+mod compiler;
 mod utils;
 
 use utils::set_panic_hook;
@@ -11,13 +12,19 @@ use wasm_bindgen::prelude::*;
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 #[wasm_bindgen]
-extern "C" {
-    fn alert(s: &str);
+pub fn resolve_id(id: &str) {
+    set_panic_hook();
+    log!("resolve_id {}", id);
 }
 
 #[wasm_bindgen]
-pub fn greet() {
+pub fn load(id: &str) {
     set_panic_hook();
-    log!("{}", "test");
-    alert("Hello, vue2-node!");
+    log!("load {}", id);
+}
+
+#[wasm_bindgen]
+pub fn transform(id: &str) {
+    set_panic_hook();
+    log!("transform {}", id);
 }
