@@ -1,8 +1,6 @@
-[package]
-name = "vue2_rs"
-version = "0.1.0"
-edition = "2021"
+[workspace]
+members = ["vue2_rs", "vue2-node"]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
+[profile.release]
+# Tell `rustc` to optimize for small code size.
+opt-level = "s"

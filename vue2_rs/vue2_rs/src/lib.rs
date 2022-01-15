@@ -3,27 +3,27 @@ pub mod tests;
 
 use error::ParserError;
 
-const INPUT: &'static str = "
-<template>
-    <h1>Hello world</h1>
-</template>
+// const INPUT: &'static str = "
+// <template>
+//     <h1>Hello world</h1>
+// </template>
 
-<script>
-module.exports = {}
-</script>
+// <script>
+// module.exports = {}
+// </script>
 
-<style lang=\"stylus\" scoped>
-h1
-    color red
-</style>
-";
+// <style lang=\"stylus\" scoped>
+// h1
+//     color red
+// </style>
+// ";
 
-fn main() {
-    match Parser::parse(INPUT) {
-        Err(e) => panic!("{}", e.to_string()),
-        Ok(v) => println!("{:#?}", v),
-    }
-}
+// fn main() {
+//     match Parser::parse(INPUT) {
+//         Err(e) => panic!("{}", e.to_string()),
+//         Ok(v) => println!("{:#?}", v),
+//     }
+// }
 
 #[derive(Debug)]
 pub struct Parser {
