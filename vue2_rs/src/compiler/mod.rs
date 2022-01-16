@@ -196,6 +196,7 @@ impl Parser {
     }
 
     fn parse_script_content(&mut self) -> Result<Option<SourceLocation>, ParserError> {
+        let mut default_export_location: Option<SourceLocation> = None;
         'outer_loop: loop {
             match self.must_read_one()? {
                 // Parse JS string
@@ -219,12 +220,40 @@ impl Parser {
                 }
                 // check if this is the location of the "export default"
                 'e' => {
-                    while let Some(c) = "xport".chars().next() {
+                    let default_export_start = self.current_char - 1;
+                    let mut export_remaining_chars = "xport".chars();
+                    while let Some(c) = export_remaining_chars.next() {
                         if self.must_read_one()? != c {
                             self.current_char -= 1;
                             continue 'outer_loop;
                         }
                     }
+
+                    // There must be at least one space between "export" and "default"
+                    if !is_space(self.must_seek_one()?) {
+                        continue;
+                    }
+
+                    // Read first character ('d') of "default"
+                    if self.must_read_one_skip_spacing()? != 'd' {
+                        self.current_char -= 1;
+                        continue;
+                    };
+
+                    let mut default_remaining_chars = "efault".chars();
+                    while let Some(c) = default_remaining_chars.next() {
+                        if self.must_read_one()? != c {
+                            self.current_char -= 1;
+                            continue 'outer_loop;
+                        }
+                    }
+
+                    if !is_space(self.must_seek_one()?) {
+                        continue;
+                    }
+
+                    default_export_location =
+                        Some(SourceLocation(default_export_start, self.current_char));
                 }
                 // Check if this is the script tag end </script>
                 '<' => {
@@ -262,7 +291,7 @@ impl Parser {
                                         ));
                                     }
 
-                                    return Ok(None); // TODO add source location of "export default"
+                                    return Ok(default_export_location);
                                 }
                             }
                         }

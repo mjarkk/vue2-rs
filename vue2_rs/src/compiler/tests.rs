@@ -65,10 +65,19 @@ mod tests {
             result.template.as_ref().unwrap().content.string(&result),
             "<h1>Hello world</h1>"
         );
+
+        let script = result.script.as_ref().unwrap();
+        assert_eq!(script.content.string(&result), "export default {}");
+        assert_eq!(script.lang.as_ref().unwrap().string(&result), "ts");
         assert_eq!(
-            result.script.as_ref().unwrap().content.string(&result),
-            "export default {}"
+            script
+                .default_export_location
+                .as_ref()
+                .unwrap()
+                .string(&result),
+            "export default"
         );
+
         let style_1 = result.styles.get(0).unwrap();
         assert_eq!(style_1.content.string(&result), "h1 {color: red;}");
         assert!(style_1.lang.is_none());
