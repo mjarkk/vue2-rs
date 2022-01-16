@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite'
 import { createVuePlugin } from 'vite-plugin-vue2'
 import { resolve_id, load, transform } from './pkg/vue2_rs.js'
+import Inspect from 'vite-plugin-inspect'
 
 const vuePlugin = createVuePlugin()
 
@@ -43,6 +44,7 @@ export default defineConfig({
     root: process.cwd() + '/preview',
     clearScreen: false,
     plugins: [
+        Inspect(),
         vuePluginProxy,
     ]
 })
