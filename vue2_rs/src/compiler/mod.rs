@@ -9,7 +9,7 @@ use error::ParserError;
 // </template>
 
 // <script>
-// module.exports = {}
+// export default {}
 // </script>
 
 // <style lang=\"stylus\" scoped>
@@ -38,6 +38,7 @@ pub struct Parser {
 #[derive(Debug, Clone)]
 pub struct Script {
     pub lang: Option<SourceLocation>,
+    pub default_export_location: Option<SourceLocation>,
     pub content: SourceLocation,
 }
 
@@ -69,6 +70,7 @@ impl Parser {
         p.execute()?;
         Ok(p)
     }
+
     fn seek_one(&mut self) -> Option<char> {
         if self.source_chars_len == self.current_char {
             None
@@ -76,11 +78,21 @@ impl Parser {
             Some(self.source_chars[self.current_char])
         }
     }
+
+    fn must_seek_one(&mut self) -> Result<char, ParserError> {
+        self.seek_one().ok_or(ParserError::eof("must_seek_one"))
+    }
+
     fn read_one(&mut self) -> Option<char> {
         let resp = self.seek_one()?;
         self.current_char += 1;
         return Some(resp);
     }
+
+    fn must_read_one(&mut self) -> Result<char, ParserError> {
+        self.read_one().ok_or(ParserError::eof("must_read_one"))
+    }
+
     fn read_one_skip_spacing(&mut self) -> Option<char> {
         loop {
             let c = self.read_one()?;
@@ -89,6 +101,16 @@ impl Parser {
             }
         }
     }
+
+    fn must_read_one_skip_spacing(&mut self) -> Result<char, ParserError> {
+        loop {
+            let c = self.must_read_one()?;
+            if !is_space(c) {
+                return Ok(c);
+            }
+        }
+    }
+
     fn execute(&mut self) -> Result<(), ParserError> {
         while let Some(b) = self.read_one_skip_spacing() {
             match b {
@@ -120,10 +142,14 @@ impl Parser {
                                 return Err(ParserError::new("execute", "can't have multiple scripts in your code"));
                             }
                             let script_start = self.current_char;
-                            let SourceLocation(script_end, _) = self.look_for("</script>".chars().collect())?;
+
+                            let default_export_location = self.parse_script_content()?;
+                            let content = SourceLocation(script_start, self.current_char - "</script>".len());
+
                             self.script = Some(Script{
                                 lang,
-                                content: SourceLocation(script_start, script_end),
+                                default_export_location,
+                                content,
                             });
                         },
                         TopLevelTag::Style => {
@@ -145,6 +171,7 @@ impl Parser {
         }
         Ok(())
     }
+
     fn look_for(&mut self, data: Vec<char>) -> Result<SourceLocation, ParserError> {
         let data_len = data.len();
         if data_len == 0 {
@@ -154,21 +181,99 @@ impl Parser {
             ));
         }
         'outerLoop: loop {
-            let c = self.read_one().ok_or(ParserError::eof("look_for"))?;
-            if c != data[0] {
+            if self.must_read_one()? != data[0] {
                 continue;
             }
 
             let start_index = self.current_char - 1;
             for idx in 1..data_len {
-                let c = self.read_one().ok_or(ParserError::eof("look_for"))?;
-                if c != data[idx] {
+                if self.must_read_one()? != data[idx] {
                     continue 'outerLoop;
                 }
             }
             return Ok(SourceLocation(start_index, self.current_char));
         }
     }
+
+    fn parse_script_content(&mut self) -> Result<Option<SourceLocation>, ParserError> {
+        'outer_loop: loop {
+            match self.must_read_one()? {
+                // Parse JS string
+                '\'' => self.parse_quotes(QuoteKind::JSSingle)?,
+                '"' => self.parse_quotes(QuoteKind::JSDouble)?,
+                '`' => self.parse_quotes(QuoteKind::JSBacktick)?,
+                // Parse JS comment
+                '/' => {
+                    match self.must_read_one()? {
+                        '/' => {
+                            // this line is a comment
+                            self.look_for(vec!['\n'])?;
+                        }
+                        '*' => {
+                            // look for end of comment
+                            self.look_for(vec!['*', '/'])?;
+                        }
+                        _ => {}
+                    };
+                    self.current_char -= 1;
+                }
+                // check if this is the location of the "export default"
+                'e' => {
+                    while let Some(c) = "xport".chars().next() {
+                        if self.must_read_one()? != c {
+                            self.current_char -= 1;
+                            continue 'outer_loop;
+                        }
+                    }
+                }
+                // Check if this is the script tag end </script>
+                '<' => {
+                    match self.must_seek_one()? {
+                        '/' | 'a'..='z' | 'A'..='Z' | '0'..='9' => {
+                            match self.parse_tag() {
+                                Err(e) => {
+                                    if e.is_eof() {
+                                        return Err(e);
+                                    }
+                                    // Ignore if error is something else
+                                }
+                                Ok(tag) => {
+                                    // Check tag type, it needs to be </script>, not <script> nor <script />
+                                    if let TagType::Close = tag.type_ {
+                                        // We expect this type
+                                    } else {
+                                        return Err(ParserError::new(
+                                            "parse_script_content",
+                                            format!(
+                                                "expected script closure but got {}",
+                                                tag.type_.to_string()
+                                            ),
+                                        ));
+                                    }
+
+                                    // Tag needs to be a script tag
+                                    if !tag.name.eq(self, &mut "script".chars()) {
+                                        return Err(ParserError::new(
+                                            "parse_script_content",
+                                            format!(
+                                                "expected script closure but got {}",
+                                                tag.name.string(self)
+                                            ),
+                                        ));
+                                    }
+
+                                    return Ok(None); // TODO add source location of "export default"
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
     fn parse_top_level_tag(&mut self) -> Result<(TopLevelTag, Tag), ParserError> {
         let parsed_tag = self.parse_tag()?;
 
@@ -190,6 +295,7 @@ impl Parser {
 
         Ok((top_level_tag, parsed_tag))
     }
+
     fn parse_name(
         &mut self,
         first_char: Option<char>,
@@ -202,7 +308,7 @@ impl Parser {
                 start -= 1;
                 c
             }
-            None => self.read_one().ok_or(ParserError::eof("parse_name"))?,
+            None => self.must_read_one()?,
         };
         match c {
             'a'..='z' | 'A'..='Z' | '0'..='9' | '_' => {
@@ -212,7 +318,7 @@ impl Parser {
         }
 
         loop {
-            c = self.read_one().ok_or(ParserError::eof("parse_name"))?;
+            c = self.must_read_one()?;
 
             match c {
                 'a'..='z' | 'A'..='Z' | '0'..='9' | '_' => {}
@@ -220,6 +326,7 @@ impl Parser {
             }
         }
     }
+
     // parse_tag is expected to be next to the open indicator (<) at the first character of the tag name
     // TODO support upper case tag names
     fn parse_tag(&mut self) -> Result<Tag, ParserError> {
@@ -233,16 +340,17 @@ impl Parser {
         let mut c = self
             .seek_one()
             .ok_or(ParserError::eof("parse_tag check closure tag"))?;
+
         if c == '/' {
             tag.type_ = TagType::Close;
+            tag.name.0 += 1;
             self.current_char += 1;
             is_close_tag = true;
         }
 
         // Parse names
         loop {
-            c = self.read_one().ok_or(ParserError::eof("parse_tag name"))?;
-            match c {
+            match self.must_read_one()? {
                 'a'..='z' | 'A'..='Z' | '0'..='9' => {}
                 _ => {
                     self.current_char -= 1;
@@ -252,11 +360,13 @@ impl Parser {
             };
         }
 
+        if tag.name.1 == 0 {
+            return Err(ParserError::new("parse_tag", "expected tag name"));
+        }
+
         // Parse args
         loop {
-            c = self
-                .read_one_skip_spacing()
-                .ok_or(ParserError::eof("parse_tag args"))?;
+            c = self.must_read_one_skip_spacing()?;
 
             match c {
                 '>' => return Ok(tag),
@@ -264,9 +374,7 @@ impl Parser {
                     return if is_close_tag {
                         Err(ParserError::new("parse_tag", "Invalid html tag"))
                     } else {
-                        c = self
-                            .read_one_skip_spacing()
-                            .ok_or(ParserError::eof("parse_tag tag closure"))?;
+                        c = self.must_read_one_skip_spacing()?;
                         if c == '>' {
                             tag.type_ = TagType::OpenAndClose;
                             Ok(tag)
@@ -289,9 +397,7 @@ impl Parser {
                 None
             } else {
                 // Parse arg value
-                c = self
-                    .read_one()
-                    .ok_or(ParserError::eof("parse_tag arg value"))?;
+                c = self.must_read_one()?;
 
                 let value_location = match c {
                     '>' => return Ok(tag),
@@ -313,9 +419,7 @@ impl Parser {
                     _ => {
                         let start = self.current_char - 1;
                         loop {
-                            c = self
-                                .read_one()
-                                .ok_or(ParserError::eof("parse_tag arg value"))?;
+                            c = self.must_read_one()?;
 
                             match c {
                                 '>' | '/' => {
@@ -341,16 +445,34 @@ impl Parser {
             });
         }
     }
+
     fn parse_quotes(&mut self, kind: QuoteKind) -> Result<(), ParserError> {
-        let quote_char = match kind {
-            QuoteKind::HTMLDouble => '"',
-            QuoteKind::HTMLSingle => '\'',
+        let (quote_char, escape): (char, bool) = match kind {
+            QuoteKind::HTMLDouble => ('"', false),
+            QuoteKind::HTMLSingle => ('\'', false),
+            QuoteKind::JSDouble => ('"', true),
+            QuoteKind::JSSingle => ('\'', true),
+            QuoteKind::JSBacktick => ('`', true),
+        };
+
+        let is_js_backtick = if let QuoteKind::JSBacktick = kind {
+            true
+        } else {
+            false
         };
 
         loop {
-            let c = self.read_one().ok_or(ParserError::eof("parse_quote"))?;
-            if c == quote_char {
-                return Ok(());
+            match self.must_read_one()? {
+                '\\' if escape => {
+                    // Skip one char
+                    self.must_read_one()?;
+                }
+                '$' if is_js_backtick && self.must_seek_one()? == '{' => {
+                    self.current_char += 1;
+                    todo!("JS backtick string inner code");
+                }
+                c if c == quote_char => return Ok(()),
+                _ => {}
             }
         }
     }
@@ -360,6 +482,9 @@ impl Parser {
 enum QuoteKind {
     HTMLDouble, // "
     HTMLSingle, // '
+    JSDouble,   // "
+    JSSingle,   // '
+    JSBacktick, // `
 }
 
 #[derive(Debug)]
@@ -416,6 +541,16 @@ enum TagType {
     Open,
     OpenAndClose,
     Close,
+}
+
+impl TagType {
+    fn to_string(&self) -> &'static str {
+        match self {
+            Self::Open => "open",
+            Self::OpenAndClose => "inline",
+            Self::Close => "close",
+        }
+    }
 }
 
 #[derive(Debug)]

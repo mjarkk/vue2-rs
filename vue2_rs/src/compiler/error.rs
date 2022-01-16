@@ -19,6 +19,9 @@ impl ParserError {
     pub fn eof(method: &'static str) -> Self {
         Self::new(method, ERR_EOF)
     }
+    pub fn is_eof(&self) -> bool {
+        self.message == ERR_EOF
+    }
 }
 
 impl error::Error for ParserError {}

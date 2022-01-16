@@ -1,7 +1,8 @@
 mod compiler;
 mod utils;
 
-use utils::set_panic_hook;
+use compiler::{error::ParserError, Parser};
+// use utils::set_panic_hook;
 
 use wasm_bindgen::prelude::*;
 
@@ -13,30 +14,61 @@ static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 #[wasm_bindgen]
 pub fn resolve_id(id: &str) {
-    // set_panic_hook();
+    // utils::set_panic_hook();
     // log!("resolve_id {}", id);
 }
 
 #[wasm_bindgen]
 pub fn load(id: &str) {
-    // set_panic_hook();
+    // utils::set_panic_hook();
     // log!("load {}", id);
 }
 
 #[wasm_bindgen]
-pub fn transform(id: &str) {
-    // set_panic_hook();
-    if !is_vue_file(id) {
-        return;
+pub fn transform(code: &str, id: &str) -> Option<String> {
+    // utils::set_panic_hook();
+
+    let parsed_id = ParsedId::parse(id);
+    if !parsed_id.is_vue {
+        return None;
     }
 
-    log!("transform {}", id);
+    if parsed_id.is_main {
+        log!("transforming {}", id);
+        log!("code: {}", code);
+        transform_main(code, id);
+    } else {
+        log!("TODO transform {}", id);
+    }
+
+    None
 }
 
-fn is_vue_file(id: &str) -> bool {
-    if let Some((fist, _)) = id.split_once('?') {
-        fist.ends_with(".vue")
-    } else {
-        id.ends_with(".vue")
+fn transform_main(code: &str, id: &str) -> Result<String, ParserError> {
+    let compiled_source = compiler::Parser::parse(code);
+
+    log!("{:#?}", compiled_source);
+
+    Ok(String::new())
+}
+
+struct ParsedId {
+    is_vue: bool,
+    is_main: bool,
+}
+
+impl ParsedId {
+    fn parse(id: &str) -> Self {
+        if let Some((fist, _)) = id.split_once('?') {
+            ParsedId {
+                is_vue: fist.ends_with(".vue"),
+                is_main: false,
+            }
+        } else {
+            ParsedId {
+                is_vue: id.ends_with(".vue"),
+                is_main: true,
+            }
+        }
     }
 }

@@ -24,19 +24,31 @@ const vuePluginProxy = {
         return vuePlugin.configureServer(server)
     },
 
+    // Returns should return virtual ids
     async resolveId(id) {
         resolve_id(id)
-        return await vuePlugin.resolveId(id)
+
+        const resp = await vuePlugin.resolveId(id)
+        // if (resp) {
+        //     console.log(id, '>', resp)
+        // }
+        return resp
     },
 
+    // Returns the file contents of id
     load(id) {
         load(id)
         return vuePlugin.load(id)
     },
 
-    async transform(code, id, transformOptions) {
-        transform(id)
-        return await vuePlugin.transform(code, id, transformOptions)
+    // transforms the code into the module
+    async transform(code, id) {
+        transform(code, id)
+        const resp = await vuePlugin.transform(code, id)
+        // if (resp) {
+        //     console.log(resp)
+        // }
+        return resp
     },
 }
 

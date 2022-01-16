@@ -25,12 +25,12 @@ mod tests {
 
     #[test]
     fn template_with_script() {
-        let result = Parser::parse("<script>module.exports = {}</script>").unwrap();
+        let result = Parser::parse("<script>export default {}</script>").unwrap();
 
         assert!(result.template.is_none());
         assert_eq!(
             result.script.as_ref().unwrap().content.string(&result),
-            "module.exports = {}"
+            "export default {}"
         );
         assert_eq!(result.styles.len(), 0);
     }
@@ -53,7 +53,7 @@ mod tests {
         let input = "
             <template><h1>Hello world</h1></template>
 
-            <script lang='ts'>module.exports = {}</script>
+            <script lang='ts'>export default {}</script>
 
             <style scoped>h1 {color: red;}</style>
             <style lang=scss>h2 {color: red;}</style>
@@ -67,7 +67,7 @@ mod tests {
         );
         assert_eq!(
             result.script.as_ref().unwrap().content.string(&result),
-            "module.exports = {}"
+            "export default {}"
         );
         let style_1 = result.styles.get(0).unwrap();
         assert_eq!(style_1.content.string(&result), "h1 {color: red;}");

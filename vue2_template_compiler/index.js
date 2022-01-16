@@ -7,7 +7,7 @@ const source = `
 </template>
 
 <script>
-module.exports = {}
+export default {}
 </script>
 
 <style lang="stylus" scoped>
