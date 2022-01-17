@@ -541,11 +541,14 @@ pub struct TagArg {
 }
 
 #[derive(Debug, Clone)]
-pub struct SourceLocation(usize, usize);
+pub struct SourceLocation(pub usize, pub usize);
 
 impl SourceLocation {
     pub fn chars<'a>(&self, parser: &'a Parser) -> &'a [char] {
         &parser.source_chars[self.0..self.1]
+    }
+    pub fn chars_vec<'a>(&self, parser: &'a Parser) -> Vec<char> {
+        parser.source_chars[self.0..self.1].into()
     }
     pub fn string(&self, parser: &Parser) -> String {
         self.chars(parser).iter().collect()

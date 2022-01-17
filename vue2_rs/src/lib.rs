@@ -1,7 +1,7 @@
 mod compiler;
 mod utils;
 
-use compiler::{error::ParserError, Parser};
+use compiler::{error::ParserError, Parser, SourceLocation};
 // use utils::set_panic_hook;
 
 use wasm_bindgen::prelude::*;
@@ -45,11 +45,40 @@ pub fn transform(code: &str, id: &str) -> Option<String> {
 }
 
 fn transform_main(code: &str, id: &str) -> Result<String, ParserError> {
-    let compiled_source = compiler::Parser::parse(code);
+    let parsed_code = Parser::parse(code)?;
 
-    log!("{:#?}", compiled_source);
+    let resp: Vec<char> = match (parsed_code.template.as_ref(), parsed_code.script.as_ref()) {
+        (_, Some(script)) => {
+            if let Some(default_export_location) = &script.default_export_location {
+                let mut resp = SourceLocation(script.content.0, default_export_location.0)
+                    .chars_vec(&parsed_code);
+                resp.append(
+                    &mut "const __vue_2_file_default_export__ ="
+                        .chars()
+                        .collect::<Vec<char>>(),
+                );
+                resp.append(
+                    &mut SourceLocation(default_export_location.1, script.content.1)
+                        .chars_vec(&parsed_code),
+                );
+                // TODO add render function
+                resp.append(
+                    &mut "\n__vue_2_file_default_export__.render = c => c('span')\nexport default __vue_2_file_default_export__"
+                        .chars()
+                        .collect::<Vec<char>>(),
+                );
+                resp
+            } else {
+                // This vue file doesn't seem to have a deafult export, lets add it
+                let mut resp = script.content.chars_vec(&parsed_code);
+                resp.append(&mut "\nexport default undefined".chars().collect::<Vec<char>>());
+                resp
+            }
+        }
+        _ => "export default undefined".chars().collect(),
+    };
 
-    Ok(String::new())
+    Ok(resp.iter().collect())
 }
 
 struct ParsedId {
