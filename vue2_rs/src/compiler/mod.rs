@@ -358,29 +358,86 @@ impl Parser {
     // It returns Ok(None) if first_char is not a char expected as first character of a argument
     fn try_parse_arg(&mut self, first_char: char) -> Result<Option<TagArg>, ParserError> {
         match first_char {
-            ':' => TagArgType::Bind,
-            '@' => TagArgType::On,
-            'a'..='z' | 'A'..='Z' | '0'..='9' | '_' => TagArgType::Deafult,
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '@' | ':' | '_' => {}
             _ => return Ok(None),
         };
 
         let mut key_location = SourceLocation(self.current_char - 1, 0);
 
+        let mut has_arg = true;
         loop {
             match self.must_read_one()? {
-                ':' => {}
-                'a'..='z' | 'A'..='Z' | '0'..='9' | '_' => {}
-                _ => {
-                    key_location.1 = self.current_char - 1;
+                'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' | ':' => {}
+                '=' => {
+                    has_arg = true;
                     break;
+                }
+                c if is_space(c) || c == '/' || c == '>' => {
+                    break;
+                }
+                c => {
+                    return Err(ParserError::new(
+                        "try_parse_arg",
+                        format!("unexpected argument character '{}'", c.to_string()),
+                    ))
                 }
             }
         }
+        key_location.1 = self.current_char - 1;
 
-        Ok(Some(TagArg {
-            key: key_location,
-            value: None,
-        }))
+        let is_vue_name = key_location.starts_with(self, "v-".chars());
+        key_location.0 += 2;
+
+        if is_vue_name {
+            let vue_directives: &[(&'static str, bool)] = &[
+                ("if", true),
+                ("for", true),
+                ("pre", true),
+                ("else", false),
+                ("slot", true),
+                ("text", true),
+                ("html", true),
+                ("show", true),
+                ("once", true),
+                ("model", true),
+                ("cloak", true),
+                ("else-if", true),
+                ("bind", true),
+                ("on", true),
+            ];
+
+            let vue_directives_match_input = Vec::with_capacity(vue_directives.len());
+            for e in vue_directives.iter() {
+                vue_directives_match_input.push(e.0.chars());
+            }
+
+            if let Some(idx) = key_location.eq_some(self, true, vue_directives_match_input) {
+                let (_, expects_argument) = vue_directives[idx];
+
+                if has_arg != expects_argument {
+                    return Err(ParserError::new(
+                        "try_parse_arg",
+                        format!(
+                            "expected argument value for \"{}\"",
+                            key_location.string(self)
+                        ),
+                    ));
+                }
+            } else {
+                key_location.0 -= 2;
+                return Err(ParserError::new(
+                    "try_parse_arg",
+                    format!("unknown vue argument \"{}\"", key_location.string(self)),
+                ));
+            }
+        } else {
+        }
+
+        // if has_arg {
+        // } else {
+        // }
+
+        Ok(Some(TagArg::Default(SourceLocation(0, 0), None)))
     }
 
     // parse_tag is expected to be next to the open indicator (<) at the first character of the tag name
@@ -495,10 +552,10 @@ impl Parser {
                 Some(value_location)
             };
 
-            tag.args.push(TagArg {
-                key: key_location,
-                value: value_location,
-            });
+            // tag.args.push(TagArg {
+            //     key: key_location,
+            //     value: value_location,
+            // });
         }
     }
 
@@ -547,9 +604,7 @@ enum QuoteKind {
 pub struct Tag {
     type_: TagType,
     name: SourceLocation,
-    args: Vec<TagArg>,      // value="val"
-    bind_args: Vec<TagArg>, // :value="val" and v-bind:value="val"
-    on_args: Vec<TagType>,  // @click and v-on:click="val"
+    args: Vec<TagArg>,
 }
 
 impl Tag {
@@ -563,16 +618,23 @@ impl Tag {
     }
 }
 
-pub enum TagArgType {
-    Deafult, // value="val"
-    Bind,    // :value="val" and v-bind:value="val"
-    On,      // @click and v-on:click="val"
-}
-
 #[derive(Debug)]
-pub struct TagArg {
-    pub key: SourceLocation,
-    pub value: Option<SourceLocation>,
+pub enum TagArg {
+    Default(SourceLocation, Option<SourceLocation>), // value="val"
+    Bind(SourceLocation, SourceLocation),            // :value="val" and v-bind:value="val"
+    On(SourceLocation, SourceLocation),              // @click and v-on:click="val"
+    Text(SourceLocation),                            // v-text=""
+    Html(SourceLocation),                            // v-html=""
+    Show(SourceLocation),                            // v-show=""
+    If(SourceLocation),                              // v-if=""
+    Else,                                            // v-else
+    ElseIf(SourceLocation),                          // v-else-if
+    For(SourceLocation),                             // v-for=""
+    Model(SourceLocation),                           // v-model=""
+    Slot(SourceLocation),                            // v-slot=""
+    Pre(SourceLocation),                             // v-pre=""
+    Cloak(SourceLocation),                           // v-cloak=""
+    Once(SourceLocation),                            // v-once=""
 }
 
 #[derive(Debug, Clone)]
@@ -591,12 +653,66 @@ impl SourceLocation {
     pub fn len(&self) -> usize {
         self.1 - self.0
     }
-    pub fn eq(&self, parser: &Parser, other: &mut impl Iterator<Item = char>) -> bool {
+    pub fn eq(&self, parser: &Parser, mut other: impl Iterator<Item = char>) -> bool {
         let mut self_iter = self.chars(parser).iter();
         loop {
             match (self_iter.next(), other.next()) {
                 (Some(a), Some(b)) if *a == b => continue,
                 (None, None) => return true,
+                _ => return false,
+            }
+        }
+    }
+    pub fn eq_some<IteratorT: Iterator<Item = char>>(
+        &self,
+        parser: &Parser,
+        can_start_with: bool,
+        others: Vec<IteratorT>,
+    ) -> Option<usize> {
+        let mut results: Vec<Option<IteratorT>> = Vec::with_capacity(others.len());
+        for other in others {
+            results.push(Some(other));
+        }
+        let disabled_entries = 0;
+
+        let mut self_iter = self.chars(parser).iter();
+        loop {
+            if let Some(a) = self_iter.next() {
+                for (idx, result) in results.iter().enumerate() {
+                    if let Some(iter) = result {
+                        if let Some(b) = iter.next() {
+                            if *a == b {
+                                continue;
+                            }
+                        } else if can_start_with {
+                            return Some(idx);
+                        }
+                        *results.get_mut(idx).unwrap() = None;
+
+                        disabled_entries += 1;
+                        if disabled_entries == others.len() {
+                            return None;
+                        }
+                    }
+                }
+            } else {
+                for (idx, result) in results.iter().enumerate() {
+                    if let Some(iter) = result {
+                        if iter.next().is_none() {
+                            return Some(idx);
+                        }
+                    }
+                }
+                return None;
+            }
+        }
+    }
+    pub fn starts_with(&self, parser: &Parser, other: impl Iterator<Item = char>) -> bool {
+        let mut self_iter = self.chars(parser).iter();
+        loop {
+            match (self_iter.next(), other.next()) {
+                (Some(a), Some(b)) if *a == b => continue,
+                (_, None) => return true,
                 _ => return false,
             }
         }
