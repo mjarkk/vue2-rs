@@ -121,7 +121,7 @@ impl Parser {
                         TagType::OpenAndClose => return Err(ParserError::new("execute", "tag type not allowed on top level")),
                         TagType::Open => {},
                     };
-                    let (_, lang) = top_level_tag.1.arg(self, "lang");
+                    let lang = top_level_tag.1.arg(self, "lang");
 
                     match top_level_tag.0 {
                         TopLevelTag::Template => {
@@ -156,7 +156,7 @@ impl Parser {
                             let style_start = self.current_char;
                             let SourceLocation(style_end, _) = self.look_for("</style>".chars().collect())?;
 
-                            let (scoped, _) =  top_level_tag.1.arg(self, "scoped");
+                            let scoped =  top_level_tag.1.arg(self, "scoped").is_some();
 
                             self.styles.push(Style{
                                 lang,
@@ -369,7 +369,8 @@ impl Parser {
             match self.must_read_one()? {
                 'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' | ':' => {}
                 '=' => {
-                    has_arg = true;
+                    let c = self.must_seek_one()?;
+                    has_arg = !is_space(c) && c != '/' && c != '>';
                     break;
                 }
                 c if is_space(c) || c == '/' || c == '>' => {
@@ -385,25 +386,63 @@ impl Parser {
         }
         key_location.1 = self.current_char - 1;
 
-        let is_vue_name = key_location.starts_with(self, "v-".chars());
-        key_location.0 += 2;
+        let value_location = if has_arg {
+            // Parse the argument
+            Some(match self.must_read_one()? {
+                '"' => {
+                    let start = self.current_char;
+                    self.parse_quotes(QuoteKind::HTMLDouble)?;
+                    SourceLocation(start, self.current_char - 1)
+                }
+                '\'' => {
+                    let start = self.current_char;
+                    self.parse_quotes(QuoteKind::HTMLSingle)?;
+                    SourceLocation(start, self.current_char - 1)
+                }
+                _ => {
+                    let start = self.current_char - 1;
+                    loop {
+                        match self.must_read_one()? {
+                            '>' | '/' => {
+                                break;
+                            }
+                            c if is_space(c) => {
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                    self.current_char -= 1;
+                    SourceLocation(start, self.current_char)
+                }
+            })
+        } else {
+            None
+        };
 
-        if is_vue_name {
-            let vue_directives: &[(&'static str, bool)] = &[
-                ("if", true),
-                ("for", true),
-                ("pre", true),
-                ("else", false),
-                ("slot", true),
-                ("text", true),
-                ("html", true),
-                ("show", true),
-                ("once", true),
-                ("model", true),
-                ("cloak", true),
-                ("else-if", true),
-                ("bind", true),
-                ("on", true),
+        if key_location.starts_with(self, "v-".chars()) {
+            // parse vue spesific tag
+            key_location.0 += 2;
+
+            let vue_directives: &[(
+                &'static str,
+                bool,
+                fn(k: SourceLocation, v: SourceLocation) -> TagArg,
+            )] = &[
+                ("if", true, |_, v| TagArg::If(v)),
+                ("for", true, |_, v| TagArg::For(v)),
+                ("pre", true, |_, v| TagArg::Pre(v)),
+                ("else", false, |_, _| TagArg::Else),
+                ("slot", true, |_, v| TagArg::Slot(v)),
+                ("text", true, |_, v| TagArg::Text(v)),
+                ("html", true, |_, v| TagArg::Html(v)),
+                ("show", true, |_, v| TagArg::Show(v)),
+                ("once", true, |_, v| TagArg::Once(v)),
+                ("model", true, |_, v| TagArg::Model(v)),
+                ("cloak", true, |_, v| TagArg::Cloak(v)),
+                ("else-if", true, |_, v| TagArg::ElseIf(v)),
+                ("bind", true, |k, v| TagArg::Bind(k, v)),
+                ("on", true, |k, v| TagArg::On(k, v)),
             ];
 
             let vue_directives_match_input = Vec::with_capacity(vue_directives.len());
@@ -412,32 +451,38 @@ impl Parser {
             }
 
             if let Some(idx) = key_location.eq_some(self, true, vue_directives_match_input) {
-                let (_, expects_argument) = vue_directives[idx];
+                let (key, expects_argument, make_result_tag) = vue_directives[idx];
 
                 if has_arg != expects_argument {
-                    return Err(ParserError::new(
+                    Err(ParserError::new(
                         "try_parse_arg",
                         format!(
-                            "expected argument value for \"{}\"",
+                            "expected {} argument value for \"{}\"",
+                            if expects_argument { "an" } else { "no" },
                             key_location.string(self)
                         ),
-                    ));
+                    ))
+                } else {
+                    key_location.0 += key.len();
+                    if self.source_chars[key_location.0] == ':' {
+                        key_location.0 += 1;
+                    }
+
+                    Ok(Some(make_result_tag(
+                        key_location,
+                        value_location.unwrap_or(SourceLocation(0, 0)),
+                    )))
                 }
             } else {
                 key_location.0 -= 2;
-                return Err(ParserError::new(
+                Err(ParserError::new(
                     "try_parse_arg",
                     format!("unknown vue argument \"{}\"", key_location.string(self)),
-                ));
+                ))
             }
         } else {
+            Ok(Some(TagArg::Default(key_location, value_location)))
         }
-
-        // if has_arg {
-        // } else {
-        // }
-
-        Ok(Some(TagArg::Default(SourceLocation(0, 0), None)))
     }
 
     // parse_tag is expected to be next to the open indicator (<) at the first character of the tag name
@@ -510,9 +555,7 @@ impl Parser {
                 None
             } else {
                 // Parse arg value
-                c = self.must_read_one()?;
-
-                let value_location = match c {
+                Some(match self.must_read_one()? {
                     '>' => return Ok(tag),
                     '/' => {
                         self.current_char -= 1;
@@ -547,9 +590,7 @@ impl Parser {
                         self.current_char -= 1;
                         SourceLocation(start, self.current_char)
                     }
-                };
-
-                Some(value_location)
+                })
             };
 
             // tag.args.push(TagArg {
@@ -608,13 +649,13 @@ pub struct Tag {
 }
 
 impl Tag {
-    fn arg(&self, parser: &Parser, key: &str) -> (bool, Option<SourceLocation>) {
+    fn arg(&self, parser: &Parser, key: &str) -> Option<&TagArg> {
         for arg in self.args.iter() {
-            if arg.key.eq(parser, &mut key.chars()) {
-                return (true, arg.value.clone());
+            if arg.key_eq(parser, key) {
+                return Some(arg);
             }
         }
-        (false, None)
+        None
     }
 }
 
@@ -635,6 +676,36 @@ pub enum TagArg {
     Pre(SourceLocation),                             // v-pre=""
     Cloak(SourceLocation),                           // v-cloak=""
     Once(SourceLocation),                            // v-once=""
+}
+
+impl TagArg {
+    fn key_eq(&self, parser: &Parser, key: &str) -> bool {
+        match self {
+            Self::Default(key_location, _) => key_location.eq(parser, key.chars()), // value="val"
+            Self::Bind(key_location, _) => {
+                if key.starts_with(':') {
+                    key_location.eq(parser, key.chars().skip(1))
+                } else if key.starts_with("v-bind:") {
+                    key_location.eq(parser, key.chars().skip(7))
+                } else {
+                    key_location.eq(parser, key.chars())
+                }
+            } // :value="val" and v-bind:value="val"
+            Self::On(key_location, _) => key == "", // @click and v-on:click="val"
+            Self::Text(_) => key == "v-text",
+            Self::Html(_) => key == "v-html",
+            Self::Show(_) => key == "v-show",
+            Self::If(_) => key == "v-if",
+            Self::Else => key == "v-else",
+            Self::ElseIf(_) => key == "v-else-if",
+            Self::For(_) => key == "v-for",
+            Self::Model(_) => key == "v-model",
+            Self::Slot(_) => key == "v-slot",
+            Self::Pre(_) => key == "v-pre",
+            Self::Cloak(_) => key == "v-cloak",
+            Self::Once(_) => key == "v-once",
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
