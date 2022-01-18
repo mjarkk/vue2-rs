@@ -347,13 +347,40 @@ impl Parser {
         }
 
         loop {
-            c = self.must_read_one()?;
-
-            match c {
+            match self.must_read_one()? {
                 'a'..='z' | 'A'..='Z' | '0'..='9' | '_' => {}
                 c => return Ok((SourceLocation(start, self.current_char - 1), c)),
             }
         }
+    }
+
+    // Try_parse_arg parses a key="value" , :key="value" , v-bind:key="value" , v-on:key="value" and @key="value"
+    // It returns Ok(None) if first_char is not a char expected as first character of a argument
+    fn try_parse_arg(&mut self, first_char: char) -> Result<Option<TagArg>, ParserError> {
+        match first_char {
+            ':' => TagArgType::Bind,
+            '@' => TagArgType::On,
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '_' => TagArgType::Deafult,
+            _ => return Ok(None),
+        };
+
+        let mut key_location = SourceLocation(self.current_char - 1, 0);
+
+        loop {
+            match self.must_read_one()? {
+                ':' => {}
+                'a'..='z' | 'A'..='Z' | '0'..='9' | '_' => {}
+                _ => {
+                    key_location.1 = self.current_char - 1;
+                    break;
+                }
+            }
+        }
+
+        Ok(Some(TagArg {
+            key: key_location,
+            value: None,
+        }))
     }
 
     // parse_tag is expected to be next to the open indicator (<) at the first character of the tag name
@@ -520,7 +547,9 @@ enum QuoteKind {
 pub struct Tag {
     type_: TagType,
     name: SourceLocation,
-    args: Vec<TagArg>,
+    args: Vec<TagArg>,      // value="val"
+    bind_args: Vec<TagArg>, // :value="val" and v-bind:value="val"
+    on_args: Vec<TagType>,  // @click and v-on:click="val"
 }
 
 impl Tag {
@@ -532,6 +561,12 @@ impl Tag {
         }
         (false, None)
     }
+}
+
+pub enum TagArgType {
+    Deafult, // value="val"
+    Bind,    // :value="val" and v-bind:value="val"
+    On,      // @click and v-on:click="val"
 }
 
 #[derive(Debug)]
