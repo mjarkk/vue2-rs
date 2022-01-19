@@ -57,6 +57,7 @@ mod tests {
 
             <style scoped>h1 {color: red;}</style>
             <style lang=scss>h2 {color: red;}</style>
+            <style lang=stylus other-arg=\"true\" scoped>h3 {color: blue;}</style>
         ";
 
         let result = Parser::parse(input).unwrap();
@@ -87,6 +88,11 @@ mod tests {
         assert_eq!(style_2.content.string(&result), "h2 {color: red;}");
         assert_eq!(style_2.lang.clone().unwrap().string(&result), "scss");
         assert!(!style_2.scoped);
+
+        let style_3 = result.styles.get(2).unwrap();
+        assert_eq!(style_3.content.string(&result), "h3 {color: blue;}");
+        assert_eq!(style_3.lang.clone().unwrap().string(&result), "stylus");
+        assert!(style_3.scoped);
     }
 
     #[test]
@@ -112,6 +118,16 @@ mod tests {
         assert_eq!(
             result.unwrap_err().message,
             "can't have multiple scripts in your code"
+        );
+    }
+
+    #[test]
+    fn parse_template_content() {
+        let result = Parser::parse("<template><h1>idk</h1></template>").unwrap();
+
+        assert_eq!(
+            result.template.as_ref().unwrap().content.string(&result),
+            "<h1>idk</h1>"
         );
     }
 }

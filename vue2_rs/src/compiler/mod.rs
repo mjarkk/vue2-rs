@@ -1,4 +1,5 @@
 pub mod error;
+pub mod template_contents;
 pub mod tests;
 
 use error::ParserError;
@@ -139,6 +140,7 @@ impl Parser {
                                 return Err(ParserError::new("execute", "can't have multiple templates in your code"));
                             }
                             let template_start = self.current_char;
+                            template_contents::compile_tempalte(self)?;
                             let SourceLocation(template_end, _) = self.look_for("</template>".chars().collect())?;
 
                             self.template = Some(Template{
