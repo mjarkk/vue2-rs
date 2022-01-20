@@ -1,7 +1,20 @@
 #[cfg(test)]
 mod tests {
     use super::super::template::Child;
-    use super::super::Parser;
+    use super::super::{Parser, Tag};
+
+    fn unwrap_element_child(children: Vec<Child>, idx: usize) -> (Tag, Vec<Child>) {
+        match children.get(idx).unwrap() {
+            Child::Tag(tag, children) => (tag.clone(), children.clone()),
+            v => panic!("{:?}", v),
+        }
+    }
+    fn unwrap_text_child(parser: &Parser, children: Vec<Child>, idx: usize) -> String {
+        match children.get(idx).unwrap() {
+            Child::Text(source_location) => source_location.string(parser),
+            v => panic!("{:?}", v),
+        }
+    }
 
     #[test]
     fn empty_template() {
@@ -18,17 +31,12 @@ mod tests {
 
         let template_content = result.template.clone().unwrap().content;
         assert_eq!(template_content.len(), 1);
-        let (h1, h1_children) = match template_content.get(0).unwrap() {
-            Child::Tag(tag, children) => (tag, children),
-            v => panic!("{:?}", v),
-        };
+
+        let (h1, h1_children) = unwrap_element_child(template_content, 0);
         assert_eq!(h1.name.string(&result), "h1");
         assert_eq!(h1_children.len(), 1);
-        let text = match h1_children.get(0).unwrap() {
-            Child::Text(t) => t,
-            v => panic!("{:?}", v),
-        };
-        assert_eq!(text.string(&result), "hello !");
+        let text = unwrap_text_child(&result, h1_children, 0);
+        assert_eq!(text, "hello !");
 
         assert!(result.script.is_none());
         assert_eq!(result.styles.len(), 0);
@@ -131,8 +139,26 @@ mod tests {
 
     #[test]
     fn parse_template_content() {
-        let result = Parser::parse("<template><h1>idk</h1></template>").unwrap();
+        let result = Parser::parse(
+            "<template>
+                <div>
+                    <h1>idk</h1>
+                    <test1/>
+                    <test2 />
+                    <test3>
+                        abc
+                        <p>def</p>
+                        ghi
+                    </test3>
+                </div>
+            </template>",
+        )
+        .unwrap();
 
-        assert_eq!(result.template.as_ref().unwrap().content.len(), 1);
+        let template = result.template.clone().unwrap().content;
+        assert_eq!(template.len(), 1);
+        let (root_div, root_div_children) = unwrap_element_child(template, 0);
+        assert_eq!(root_div.name.string(&result), "div");
+        assert_eq!(root_div_children.len(), 4);
     }
 }

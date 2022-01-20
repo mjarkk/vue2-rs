@@ -29,9 +29,10 @@ impl Child {
                     let tag = p.parse_tag()?;
                     match tag.type_ {
                         TagType::Close => {
-                            let found = false;
-                            for parent in parents_tag_names.iter() {
+                            let mut found = false;
+                            for parent in parents_tag_names.iter().rev() {
                                 if tag.name.eq_self(p, parent) {
+                                    found = true;
                                     break;
                                 }
                             }
