@@ -1,15 +1,15 @@
 #[cfg(test)]
 mod tests {
     use super::super::template::Child;
-    use super::super::{Parser, Tag};
+    use super::super::{Parser, Tag, TagType};
 
-    fn unwrap_element_child(children: Vec<Child>, idx: usize) -> (Tag, Vec<Child>) {
+    fn unwrap_element_child(children: &Vec<Child>, idx: usize) -> (Tag, Vec<Child>) {
         match children.get(idx).unwrap() {
             Child::Tag(tag, children) => (tag.clone(), children.clone()),
             v => panic!("{:?}", v),
         }
     }
-    fn unwrap_text_child(parser: &Parser, children: Vec<Child>, idx: usize) -> String {
+    fn unwrap_text_child(parser: &Parser, children: &Vec<Child>, idx: usize) -> String {
         match children.get(idx).unwrap() {
             Child::Text(source_location) => source_location.string(parser),
             v => panic!("{:?}", v),
@@ -32,10 +32,10 @@ mod tests {
         let template_content = result.template.clone().unwrap().content;
         assert_eq!(template_content.len(), 1);
 
-        let (h1, h1_children) = unwrap_element_child(template_content, 0);
+        let (h1, h1_children) = unwrap_element_child(&template_content, 0);
         assert_eq!(h1.name.string(&result), "h1");
         assert_eq!(h1_children.len(), 1);
-        let text = unwrap_text_child(&result, h1_children, 0);
+        let text = unwrap_text_child(&result, &h1_children, 0);
         assert_eq!(text, "hello !");
 
         assert!(result.script.is_none());
@@ -157,8 +157,46 @@ mod tests {
 
         let template = result.template.clone().unwrap().content;
         assert_eq!(template.len(), 1);
-        let (root_div, root_div_children) = unwrap_element_child(template, 0);
+        let (root_div, root_div_children) = unwrap_element_child(&template, 0);
         assert_eq!(root_div.name.string(&result), "div");
         assert_eq!(root_div_children.len(), 4);
+
+        let (h1, h1_children) = unwrap_element_child(&root_div_children, 0);
+        assert_eq!(h1.name.string(&result), "h1");
+        assert_eq!(h1_children.len(), 1);
+        assert_eq!(unwrap_text_child(&result, &h1_children, 0), "idk");
+
+        let (test1, children) = unwrap_element_child(&root_div_children, 1);
+        assert_eq!(test1.name.string(&result), "test1");
+        match test1.type_ {
+            TagType::OpenAndClose => {}
+            v => panic!("{:?}", v),
+        }
+        assert_eq!(children.len(), 0);
+
+        let (test2, children) = unwrap_element_child(&root_div_children, 2);
+        assert_eq!(test2.name.string(&result), "test2");
+        match test2.type_ {
+            TagType::OpenAndClose => {}
+            v => panic!("{:?}", v),
+        }
+        assert_eq!(children.len(), 0);
+
+        let (test3, children) = unwrap_element_child(&root_div_children, 3);
+        assert_eq!(test3.name.string(&result), "test3");
+        match test3.type_ {
+            TagType::Open => {}
+            v => panic!("{:?}", v),
+        }
+        assert_eq!(children.len(), 3);
+
+        let abc = unwrap_text_child(&result, &children, 0);
+        let (_, inner_p_children) = unwrap_element_child(&children, 1);
+        let def = unwrap_text_child(&result, &inner_p_children, 0);
+        let ghi = unwrap_text_child(&result, &children, 2);
+
+        assert_eq!(abc.trim(), "abc");
+        assert_eq!(def, "def");
+        assert_eq!(ghi.trim(), "ghi");
     }
 }
