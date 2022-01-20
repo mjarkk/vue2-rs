@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod tests {
+    use super::super::template::Child;
     use super::super::Parser;
 
     #[test]
@@ -13,9 +14,22 @@ mod tests {
 
     #[test]
     fn simple_template() {
-        let result = Parser::parse("<template><h1>hello</h1></template>").unwrap();
+        let result = Parser::parse("<template><h1>hello !</h1></template>").unwrap();
 
-        assert_eq!(result.template.as_ref().unwrap().content.len(), 1);
+        let template_content = result.template.clone().unwrap().content;
+        assert_eq!(template_content.len(), 1);
+        let (h1, h1_children) = match template_content.get(0).unwrap() {
+            Child::Tag(tag, children) => (tag, children),
+            v => panic!("{:?}", v),
+        };
+        assert_eq!(h1.name.string(&result), "h1");
+        assert_eq!(h1_children.len(), 1);
+        let text = match h1_children.get(0).unwrap() {
+            Child::Text(t) => t,
+            v => panic!("{:?}", v),
+        };
+        assert_eq!(text.string(&result), "hello !");
+
         assert!(result.script.is_none());
         assert_eq!(result.styles.len(), 0);
     }
