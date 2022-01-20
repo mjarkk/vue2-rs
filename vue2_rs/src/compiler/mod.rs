@@ -1,8 +1,10 @@
 pub mod error;
-pub mod template_contents;
+pub mod template;
 pub mod tests;
+pub mod utils;
 
 use error::ParserError;
+use utils::is_space;
 
 // const INPUT: &'static str = "
 // <template>
@@ -46,7 +48,7 @@ pub struct Script {
 #[derive(Debug, Clone)]
 pub struct Template {
     pub lang: Option<SourceLocation>,
-    pub content: SourceLocation,
+    pub content: Vec<template::Child>,
 }
 
 #[derive(Debug, Clone)]
@@ -139,13 +141,11 @@ impl Parser {
                             if self.template.is_some() {
                                 return Err(ParserError::new("execute", "can't have multiple templates in your code"));
                             }
-                            let template_start = self.current_char;
-                            template_contents::compile_tempalte(self)?;
-                            let SourceLocation(template_end, _) = self.look_for("</template>".chars().collect())?;
+                            let children = template::compile(self)?;
 
                             self.template = Some(Template{
                                 lang,
-                                content: SourceLocation(template_start, template_end),
+                                content: children,
                             });
                         },
                         TopLevelTag::Script => {
@@ -621,7 +621,7 @@ enum QuoteKind {
     JSBacktick, // `
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Tag {
     type_: TagType,
     name: SourceLocation,
@@ -639,7 +639,7 @@ impl Tag {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TagArg {
     Default(SourceLocation, Option<SourceLocation>), // value="val"
     Bind(SourceLocation, SourceLocation),            // :value="val" and v-bind:value="val"
@@ -745,6 +745,9 @@ impl SourceLocation {
     pub fn len(&self) -> usize {
         self.1 - self.0
     }
+    pub fn eq_self(&self, parser: &Parser, other: &Self) -> bool {
+        self.len() == other.len() && self.chars(parser) == other.chars(parser)
+    }
     pub fn eq(&self, parser: &Parser, mut other: impl Iterator<Item = char>) -> bool {
         let mut self_iter = self.chars(parser).iter();
         loop {
@@ -819,8 +822,8 @@ impl SourceLocation {
     }
 }
 
-#[derive(Debug)]
-enum TagType {
+#[derive(Debug, Clone)]
+pub enum TagType {
     Open,
     OpenAndClose,
     Close,
@@ -841,11 +844,4 @@ enum TopLevelTag {
     Template,
     Script,
     Style,
-}
-
-fn is_space(c: char) -> bool {
-    match c {
-        ' ' | '\t' | '\n' | '\r' => true,
-        _ => false,
-    }
 }

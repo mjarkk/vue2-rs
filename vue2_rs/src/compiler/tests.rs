@@ -15,10 +15,7 @@ mod tests {
     fn simple_template() {
         let result = Parser::parse("<template><h1>hello</h1></template>").unwrap();
 
-        assert_eq!(
-            result.template.as_ref().unwrap().content.string(&result),
-            "<h1>hello</h1>",
-        );
+        assert_eq!(result.template.as_ref().unwrap().content.len(), 1);
         assert!(result.script.is_none());
         assert_eq!(result.styles.len(), 0);
     }
@@ -62,10 +59,7 @@ mod tests {
 
         let result = Parser::parse(input).unwrap();
 
-        assert_eq!(
-            result.template.as_ref().unwrap().content.string(&result),
-            "<h1>Hello world</h1>"
-        );
+        assert_eq!(result.template.as_ref().unwrap().content.len(), 1);
 
         let script = result.script.as_ref().unwrap();
         assert_eq!(script.content.string(&result), "export default {}");
@@ -125,9 +119,6 @@ mod tests {
     fn parse_template_content() {
         let result = Parser::parse("<template><h1>idk</h1></template>").unwrap();
 
-        assert_eq!(
-            result.template.as_ref().unwrap().content.string(&result),
-            "<h1>idk</h1>"
-        );
+        assert_eq!(result.template.as_ref().unwrap().content.len(), 1);
     }
 }
