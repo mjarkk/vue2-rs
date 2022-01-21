@@ -208,4 +208,32 @@ mod tests {
         assert_eq!(ghi.trim(), "ghi");
         assert_eq!(jkl_var.string(&result), " jkl ");
     }
+
+    #[test]
+    fn survive_crappy_template() {
+        let cases = vec![
+            "<div>",            // only an open tag with no closing tag
+            "</div>",           // only a closing tag
+            "<div><h1></div>",  // no h1 closing tag, but with with a div closing tag
+            "<div><h1></span>", // closing a tag not related to any earlier open tag
+            "</div></div>",     // 2 closing tags without open tags
+        ];
+
+        for case in cases {
+            let testing_code = format!(
+                "
+                    <template>
+                        {}
+                    </template>
+
+                    <script>
+                        export default {}
+                    </script>
+               ",
+                case, "{}",
+            );
+
+            Parser::parse(&testing_code).unwrap();
+        }
+    }
 }

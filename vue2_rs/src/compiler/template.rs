@@ -1,8 +1,14 @@
 use super::{utils::is_space, JSEnd, Parser, ParserError, SourceLocation, Tag, TagType};
 
 pub fn compile(p: &mut Parser) -> Result<Vec<Child>, ParserError> {
-    let (children, _) = Child::compile_children(p, &mut Vec::new())?;
-    Ok(children)
+    let mut compile_result = Child::compile_children(p, &mut Vec::new())?;
+    loop {
+        if compile_result.1.eq(p, "template".chars()) {
+            return Ok(compile_result.0);
+        } else {
+            compile_result = Child::compile_children(p, &mut Vec::new())?;
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -52,7 +58,7 @@ impl Child {
 
                             let correct_closing_tag = tag_name.eq_self(p, &closing_tag_name);
                             if !correct_closing_tag {
-                                return Ok((resp, tag_name));
+                                return Ok((resp, closing_tag_name));
                             }
                         }
                         TagType::OpenAndClose => {

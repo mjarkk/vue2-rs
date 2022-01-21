@@ -119,6 +119,7 @@ impl Parser {
             match b {
                 '<' => {
                     let top_level_tag = self.parse_top_level_tag()?;
+                    println!("{}", top_level_tag.1.name.string(self));
                     match top_level_tag.1.type_ {
                         TagType::Close => return Err(ParserError::new("execute", "found tag closure without open")),
                         TagType::OpenAndClose => return Err(ParserError::new("execute", "tag type not allowed on top level")),
