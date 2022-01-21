@@ -1,4 +1,5 @@
 pub mod error;
+pub mod js;
 pub mod template;
 pub mod tests;
 pub mod utils;
@@ -155,7 +156,7 @@ impl Parser {
                             }
                             let script_start = self.current_char;
 
-                            let default_export_location = self.parse_js(JSEnd::ScriptClosure)?;
+                            let default_export_location = js::compile(self, js::End::ScriptClosure)?;
                             let content = SourceLocation(script_start, self.current_char - "</script>".len());
 
                             self.script = Some(Script{
@@ -204,118 +205,6 @@ impl Parser {
                 }
             }
             return Ok(SourceLocation(start_index, self.current_char));
-        }
-    }
-
-    fn parse_js(&mut self, closure: JSEnd) -> Result<Option<SourceLocation>, ParserError> {
-        let mut default_export_location: Option<SourceLocation> = None;
-        'outer_loop: loop {
-            match self.must_read_one()? {
-                // Parse JS string
-                '\'' => self.parse_quotes(QuoteKind::JSSingle)?,
-                '"' => self.parse_quotes(QuoteKind::JSDouble)?,
-                '`' => self.parse_quotes(QuoteKind::JSBacktick)?,
-                // Parse JS comment
-                '/' => {
-                    match self.must_read_one()? {
-                        '/' => {
-                            // this line is a comment
-                            self.look_for(vec!['\n'])?;
-                        }
-                        '*' => {
-                            // look for end of comment
-                            self.look_for(vec!['*', '/'])?;
-                        }
-                        _ => {}
-                    };
-                    self.current_char -= 1;
-                }
-                // check if this is the location of the "export default"
-                'e' => {
-                    let default_export_start = self.current_char - 1;
-                    let mut export_remaining_chars = "xport".chars();
-                    while let Some(c) = export_remaining_chars.next() {
-                        if self.must_read_one()? != c {
-                            self.current_char -= 1;
-                            continue 'outer_loop;
-                        }
-                    }
-
-                    // There must be at least one space between "export" and "default"
-                    if !is_space(self.must_seek_one()?) {
-                        continue;
-                    }
-
-                    // Read first character ('d') of "default"
-                    if self.must_read_one_skip_spacing()? != 'd' {
-                        self.current_char -= 1;
-                        continue;
-                    };
-
-                    let mut default_remaining_chars = "efault".chars();
-                    while let Some(c) = default_remaining_chars.next() {
-                        if self.must_read_one()? != c {
-                            self.current_char -= 1;
-                            continue 'outer_loop;
-                        }
-                    }
-
-                    if !is_space(self.must_seek_one()?) {
-                        continue;
-                    }
-
-                    default_export_location =
-                        Some(SourceLocation(default_export_start, self.current_char));
-                }
-                '}' if closure == JSEnd::TemplateClousre && self.must_seek_one()? == '}' => {
-                    self.current_char += 1;
-                    return Ok(default_export_location);
-                }
-                // Check if this is the script tag end </script>
-                '<' if closure == JSEnd::ScriptClosure => {
-                    match self.must_seek_one()? {
-                        '/' | 'a'..='z' | 'A'..='Z' | '0'..='9' => {
-                            match self.parse_tag() {
-                                Err(e) => {
-                                    if e.is_eof() {
-                                        return Err(e);
-                                    }
-                                    // Ignore if error is something else
-                                }
-                                Ok(tag) => {
-                                    // Check tag type, it needs to be </script>, not <script> nor <script />
-                                    if let TagType::Close = tag.type_ {
-                                        // We expect this type
-                                    } else {
-                                        return Err(ParserError::new(
-                                            "parse_script_content",
-                                            format!(
-                                                "expected script closure but got {}",
-                                                tag.type_.to_string()
-                                            ),
-                                        ));
-                                    }
-
-                                    // Tag needs to be a script tag
-                                    if !tag.name.eq(self, &mut "script".chars()) {
-                                        return Err(ParserError::new(
-                                            "parse_script_content",
-                                            format!(
-                                                "expected script closure but got {}",
-                                                tag.name.string(self)
-                                            ),
-                                        ));
-                                    }
-
-                                    return Ok(default_export_location);
-                                }
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-                _ => {}
-            }
         }
     }
 
@@ -849,10 +738,4 @@ enum TopLevelTag {
     Template,
     Script,
     Style,
-}
-
-#[derive(PartialEq)]
-pub enum JSEnd {
-    ScriptClosure = 1,   // </script>
-    TemplateClousre = 2, // }}
 }
