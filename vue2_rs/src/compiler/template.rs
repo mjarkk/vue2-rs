@@ -1,4 +1,4 @@
-use super::{utils::is_space, Parser, ParserError, SourceLocation, Tag, TagType};
+use super::{utils::is_space, JSEnd, Parser, ParserError, SourceLocation, Tag, TagType};
 
 pub fn compile(p: &mut Parser) -> Result<Vec<Child>, ParserError> {
     let (children, _) = Child::compile_children(p, &mut Vec::new())?;
@@ -105,9 +105,10 @@ impl Child {
         }
     }
 
-    fn compile_var(_: &mut Parser) -> Result<Self, ParserError> {
-        todo!("compile template var");
-        Ok(Self::Var(SourceLocation(0, 0)))
+    fn compile_var(p: &mut Parser) -> Result<Self, ParserError> {
+        let start = p.current_char;
+        p.parse_js(JSEnd::TemplateClousre)?;
+        Ok(Self::Var(SourceLocation(start, p.current_char - 2)))
     }
 }
 

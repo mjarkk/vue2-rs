@@ -154,7 +154,7 @@ impl Parser {
                             }
                             let script_start = self.current_char;
 
-                            let default_export_location = self.parse_script_content()?;
+                            let default_export_location = self.parse_js(JSEnd::ScriptClosure)?;
                             let content = SourceLocation(script_start, self.current_char - "</script>".len());
 
                             self.script = Some(Script{
@@ -206,7 +206,7 @@ impl Parser {
         }
     }
 
-    fn parse_script_content(&mut self) -> Result<Option<SourceLocation>, ParserError> {
+    fn parse_js(&mut self, closure: JSEnd) -> Result<Option<SourceLocation>, ParserError> {
         let mut default_export_location: Option<SourceLocation> = None;
         'outer_loop: loop {
             match self.must_read_one()? {
@@ -266,8 +266,12 @@ impl Parser {
                     default_export_location =
                         Some(SourceLocation(default_export_start, self.current_char));
                 }
+                '}' if closure == JSEnd::TemplateClousre && self.must_seek_one()? == '}' => {
+                    self.current_char += 1;
+                    return Ok(default_export_location);
+                }
                 // Check if this is the script tag end </script>
-                '<' => {
+                '<' if closure == JSEnd::ScriptClosure => {
                     match self.must_seek_one()? {
                         '/' | 'a'..='z' | 'A'..='Z' | '0'..='9' => {
                             match self.parse_tag() {
@@ -844,4 +848,10 @@ enum TopLevelTag {
     Template,
     Script,
     Style,
+}
+
+#[derive(PartialEq)]
+pub enum JSEnd {
+    ScriptClosure = 1,   // </script>
+    TemplateClousre = 2, // }}
 }

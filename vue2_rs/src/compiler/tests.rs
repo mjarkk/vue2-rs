@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use super::super::template::Child;
-    use super::super::{Parser, Tag, TagType};
+    use super::super::{Parser, SourceLocation, Tag, TagType};
 
     fn unwrap_element_child(children: &Vec<Child>, idx: usize) -> (Tag, Vec<Child>) {
         match children.get(idx).unwrap() {
@@ -12,6 +12,12 @@ mod tests {
     fn unwrap_text_child(parser: &Parser, children: &Vec<Child>, idx: usize) -> String {
         match children.get(idx).unwrap() {
             Child::Text(source_location) => source_location.string(parser),
+            v => panic!("{:?}", v),
+        }
+    }
+    fn unwrap_var_child(children: &Vec<Child>, idx: usize) -> SourceLocation {
+        match children.get(idx).unwrap() {
+            Child::Var(source_location) => source_location.clone(),
             v => panic!("{:?}", v),
         }
     }
@@ -149,6 +155,7 @@ mod tests {
                         abc
                         <p>def</p>
                         ghi
+                        {{ jkl }}
                     </test3>
                 </div>
             </template>",
@@ -188,15 +195,17 @@ mod tests {
             TagType::Open => {}
             v => panic!("{:?}", v),
         }
-        assert_eq!(children.len(), 3);
+        assert_eq!(children.len(), 4);
 
         let abc = unwrap_text_child(&result, &children, 0);
         let (_, inner_p_children) = unwrap_element_child(&children, 1);
         let def = unwrap_text_child(&result, &inner_p_children, 0);
         let ghi = unwrap_text_child(&result, &children, 2);
+        let jkl_var = unwrap_var_child(&children, 3);
 
         assert_eq!(abc.trim(), "abc");
         assert_eq!(def, "def");
         assert_eq!(ghi.trim(), "ghi");
+        assert_eq!(jkl_var.string(&result), " jkl ");
     }
 }
