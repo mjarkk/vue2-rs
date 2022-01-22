@@ -1,6 +1,6 @@
 <template>
   <div>
-    <h1>It wurks {{ count }} !</h1>
+    <h1>It wurks {{ count }}!</h1>
     <button v-on:click="count++">+</button>
     <button @click="count--">-</button>
   </div>

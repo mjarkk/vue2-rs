@@ -43,11 +43,13 @@ const vuePluginProxy = {
 
     // transforms the code into the module
     async transform(code, id) {
+        const t1 = performance.now()
         transform(code, id)
+        const t2 = performance.now()
         const resp = await vuePlugin.transform(code, id)
-        // if (resp) {
-        //     console.log(resp)
-        // }
+        const t3 = performance.now()
+        // console.log(`${t2 - t1} - ${t3 - t2}`)
+        // if (resp) console.log(resp)
         return resp
     },
 }
