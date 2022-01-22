@@ -120,7 +120,6 @@ impl Parser {
             match b {
                 '<' => {
                     let top_level_tag = self.parse_top_level_tag()?;
-                    println!("{}", top_level_tag.1.name.string(self));
                     match top_level_tag.1.type_ {
                         TagType::Close => return Err(ParserError::new("execute", "found tag closure without open")),
                         TagType::OpenAndClose => return Err(ParserError::new("execute", "tag type not allowed on top level")),
@@ -156,7 +155,7 @@ impl Parser {
                             }
                             let script_start = self.current_char;
 
-                            let default_export_location = js::compile(self, js::End::ScriptClosure)?;
+                            let default_export_location = js::compile_script_content(self)?;
                             let content = SourceLocation(script_start, self.current_char - "</script>".len());
 
                             self.script = Some(Script{
@@ -497,7 +496,7 @@ impl Parser {
                 }
                 '$' if is_js_backtick && self.must_seek_one()? == '{' => {
                     self.current_char += 1;
-                    todo!("JS backtick string inner code");
+                    js::parse_block_like(self, '}')?;
                 }
                 c if c == quote_char => return Ok(()),
                 _ => {}

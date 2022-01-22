@@ -113,7 +113,7 @@ impl Child {
 
     fn compile_var(p: &mut Parser) -> Result<Self, ParserError> {
         let start = p.current_char;
-        js::compile(p, js::End::TemplateClosure)?;
+        js::compile_template_var(p)?;
         Ok(Self::Var(SourceLocation(start, p.current_char - 2)))
     }
 }
