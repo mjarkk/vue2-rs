@@ -127,11 +127,20 @@ fn parse_comment(p: &mut Parser) -> Result<bool, ParserError> {
 }
 
 pub fn parse_block_like(p: &mut Parser, closure: char) -> Result<(), ParserError> {
+    let last_word = SourceLocation(0, 0);
+
     loop {
-        match p.must_read_one()? {
+        let c_index = p.current_char;
+        let c = p.must_read_one()?;
+
+        match c {
             c if handle_common(p, c)? => {}
             // Is closing character
             c if c == closure => return Ok(()),
+            c if c <= '!' => continue,
+            c if is_space(c) => {}
+            c if c.is_ascii_lowercase() || c.is_ascii_uppercase() || c > '}' => {}
+            c if c.is_numeric() => {}
             _ => {}
         }
     }
