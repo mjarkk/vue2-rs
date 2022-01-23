@@ -106,47 +106,57 @@ pub fn compile_script_content(p: &mut Parser) -> Result<Option<SourceLocation>, 
     }
 }
 
-fn parse_comment(p: &mut Parser) -> Result<bool, ParserError> {
-    match p.must_seek_one()? {
-        '/' => {
-            // this line is a comment
-            p.current_char += 1;
-            p.look_for(vec!['\n'])?;
-            p.current_char -= 1;
-            Ok(true)
-        }
-        '*' => {
-            // look for end of comment
-            p.current_char += 1;
-            p.look_for(vec!['*', '/'])?;
-            p.current_char -= 1;
-            Ok(true)
-        }
-        _ => Ok(false),
-    }
-}
-
 pub fn parse_block_like(p: &mut Parser, closure: char) -> Result<(), ParserError> {
-    let last_word = SourceLocation(0, 0);
+    loop {
+        match p.must_read_one()? {
+            c if handle_common(p, c)? => {}
+            c if c.is_ascii_lowercase() || c.is_ascii_uppercase() || c > '}' => {
+                // Start of word, this might be a var or a static method
+            }
+            _ => {}
+        }
+    }
+
+    let mut last_word_start: Option<usize> = None;
 
     loop {
         let c_index = p.current_char;
         let c = p.must_read_one()?;
 
+        let last_word_start_is_some = if let Some(start) = last_word_start {
+            match c {
+                c if is_space(c) => last_word_start = None,
+
+                '?' | '.' | '[' => last_word_start = None,
+                _ => last_word_start = None,
+            };
+            true
+        } else {
+            false
+        };
+
         match c {
-            c if handle_common(p, c)? => {}
+            c if handle_common(p, c)? => {
+                last_word_start = None;
+            }
             // Is closing character
             c if c == closure => return Ok(()),
             c if c <= '!' => continue,
-            c if is_space(c) => {}
-            c if c.is_ascii_lowercase() || c.is_ascii_uppercase() || c > '}' => {}
+            c if is_space(c) => {
+                last_word_start = None;
+            }
+            c if c.is_ascii_lowercase() || c.is_ascii_uppercase() || c > '}' => {
+                if !last_word_start_is_some {
+                    last_word_start = Some(c_index);
+                }
+            }
             c if c.is_numeric() => {}
             _ => {}
         }
     }
 }
 
-pub fn handle_common(p: &mut Parser, c: char) -> Result<bool, ParserError> {
+fn handle_common(p: &mut Parser, c: char) -> Result<bool, ParserError> {
     match c {
         // Parse string
         '\'' => {
@@ -174,6 +184,26 @@ pub fn handle_common(p: &mut Parser, c: char) -> Result<bool, ParserError> {
         }
         '[' => {
             parse_block_like(p, ']')?;
+            Ok(true)
+        }
+        _ => Ok(false),
+    }
+}
+
+fn parse_comment(p: &mut Parser) -> Result<bool, ParserError> {
+    match p.must_seek_one()? {
+        '/' => {
+            // this line is a comment
+            p.current_char += 1;
+            p.look_for(vec!['\n'])?;
+            p.current_char -= 1;
+            Ok(true)
+        }
+        '*' => {
+            // look for end of comment
+            p.current_char += 1;
+            p.look_for(vec!['*', '/'])?;
+            p.current_char -= 1;
             Ok(true)
         }
         _ => Ok(false),
