@@ -1,16 +1,18 @@
 use super::{utils::is_space, Parser, ParserError, QuoteKind, SourceLocation, TagType};
 
-pub fn compile_template_var(p: &mut Parser) -> Result<(), ParserError> {
-    loop {
-        match p.must_read_one()? {
-            c if handle_common(p, c)? => {}
+pub fn compile_template_var(p: &mut Parser) -> Result<Vec<SourceLocation>, ParserError> {
+    let mut global_references: Option<Vec<SourceLocation>> = Some(Vec::with_capacity(1));
 
-            '}' if p.must_seek_one()? == '}' => {
-                p.current_char += 1;
-                return Ok(());
-            }
-            _ => {}
-        }
+    parse_block_like(p, '}', &mut global_references)?;
+
+    let c = p.must_read_one()?;
+    if c != '}' {
+        Err(ParserError::new(
+            "compile_template_var",
+            format!("expected '{}' but got '{}'", "}", c.to_string()),
+        ))
+    } else {
+        Ok(global_references.unwrap())
     }
 }
 
@@ -18,7 +20,7 @@ pub fn compile_script_content(p: &mut Parser) -> Result<Option<SourceLocation>, 
     let mut default_export_location: Option<SourceLocation> = None;
     'outer_loop: loop {
         match p.must_read_one()? {
-            c if handle_common(p, c)? => {}
+            c if handle_common(p, c, &mut None)? => {}
 
             // check if this is the location of the "export default"
             'e' => {
@@ -106,84 +108,216 @@ pub fn compile_script_content(p: &mut Parser) -> Result<Option<SourceLocation>, 
     }
 }
 
-pub fn parse_block_like(p: &mut Parser, closure: char) -> Result<(), ParserError> {
+pub fn parse_block_like(
+    p: &mut Parser,
+    closure: char,
+    global_references: &mut Option<Vec<SourceLocation>>,
+) -> Result<(), ParserError> {
     loop {
         match p.must_read_one()? {
-            c if handle_common(p, c)? => {}
+            c if c == closure => return Ok(()),
+            c if handle_common(p, c, global_references)? => {}
             c if c.is_ascii_lowercase() || c.is_ascii_uppercase() || c > '}' => {
                 // Start of word, this might be a var or a static method
+                parse_potential_var(p, global_references)?;
             }
-            _ => {}
-        }
-    }
-
-    let mut last_word_start: Option<usize> = None;
-
-    loop {
-        let c_index = p.current_char;
-        let c = p.must_read_one()?;
-
-        let last_word_start_is_some = if let Some(start) = last_word_start {
-            match c {
-                c if is_space(c) => last_word_start = None,
-
-                '?' | '.' | '[' => last_word_start = None,
-                _ => last_word_start = None,
-            };
-            true
-        } else {
-            false
-        };
-
-        match c {
-            c if handle_common(p, c)? => {
-                last_word_start = None;
-            }
-            // Is closing character
-            c if c == closure => return Ok(()),
-            c if c <= '!' => continue,
-            c if is_space(c) => {
-                last_word_start = None;
-            }
-            c if c.is_ascii_lowercase() || c.is_ascii_uppercase() || c > '}' => {
-                if !last_word_start_is_some {
-                    last_word_start = Some(c_index);
-                }
-            }
-            c if c.is_numeric() => {}
             _ => {}
         }
     }
 }
 
-fn handle_common(p: &mut Parser, c: char) -> Result<bool, ParserError> {
+fn parse_potential_var(
+    p: &mut Parser,
+    global_references: &mut Option<Vec<SourceLocation>>,
+) -> Result<(), ParserError> {
+    let (mut c, name) = parse_name(p)?;
+
+    // Note that "this" and "super" are removed from this list
+    let name_matches_js_keyword = name.eq_some(
+        p,
+        false,
+        vec![
+            "abstract".chars(),
+            "abstract".chars(),
+            "arguments".chars(),
+            "boolean".chars(),
+            "break".chars(),
+            "byte".chars(),
+            "case".chars(),
+            "catch".chars(),
+            "char".chars(),
+            "const".chars(),
+            "continue".chars(),
+            "debugger".chars(),
+            "default".chars(),
+            "delete".chars(),
+            "do".chars(),
+            "double".chars(),
+            "else".chars(),
+            "eval".chars(),
+            "false".chars(),
+            "final".chars(),
+            "finally".chars(),
+            "float".chars(),
+            "for".chars(),
+            "function".chars(),
+            "goto".chars(),
+            "if".chars(),
+            "implements".chars(),
+            "in".chars(),
+            "instanceof".chars(),
+            "int".chars(),
+            "interface".chars(),
+            "let".chars(),
+            "long".chars(),
+            "native".chars(),
+            "new".chars(),
+            "null".chars(),
+            "package".chars(),
+            "private".chars(),
+            "protected".chars(),
+            "public".chars(),
+            "return".chars(),
+            "short".chars(),
+            "static".chars(),
+            "switch".chars(),
+            "synchronized".chars(),
+            "throw".chars(),
+            "throws".chars(),
+            "transient".chars(),
+            "true".chars(),
+            "try".chars(),
+            "typeof".chars(),
+            "var".chars(),
+            "void".chars(),
+            "volatile".chars(),
+            "while".chars(),
+            "with".chars(),
+            "yield".chars(),
+            // ES5 keywords
+            "class".chars(),
+            "enum".chars(),
+            "export".chars(),
+            "extends".chars(),
+            "import".chars(),
+        ],
+    );
+
+    if name_matches_js_keyword.is_some() {
+        p.current_char -= 1;
+        return Ok(());
+    }
+
+    if let Some(refs) = global_references {
+        refs.push(name);
+    }
+
+    loop {
+        match c {
+            c if is_space(c) => {}
+            '.' => {
+                break;
+            }
+            '?' if p.must_seek_one()? == '.' => {
+                p.current_char += 1;
+                break;
+            }
+            '[' => {
+                parse_block_like(p, ']', global_references)?;
+            }
+            ';' => {
+                return Ok(());
+            }
+            _ => {
+                p.current_char -= 1;
+                return Ok(());
+            }
+        }
+        c = p.must_read_one()?;
+    }
+
+    // This is a chain (a.b.c) or (a['b']['c']) or (a?.b?.c) or (a?.['b']?.['c'])
+    loop {
+        if c == '[' {
+            // is a['b']['c'] or a?.['b']?.['c']
+            parse_block_like(p, ']', global_references)?;
+            c = p.must_read_one()?;
+        } else {
+            // is a.b.c or a?.b?.c
+            let (next_c, _) = parse_name(p)?;
+            c = next_c;
+        }
+        loop {
+            match c {
+                c if is_space(c) => {}
+                '.' => {
+                    break;
+                }
+                '?' if p.must_seek_one()? == '.' => {
+                    p.current_char += 1;
+                    break;
+                }
+                '[' => {
+                    parse_block_like(p, ']', global_references)?;
+                }
+                ';' => {
+                    return Ok(());
+                }
+                _ => {
+                    p.current_char -= 1;
+                    return Ok(());
+                }
+            }
+            c = p.must_read_one()?;
+        }
+    }
+}
+
+fn parse_name(p: &mut Parser) -> Result<(char, SourceLocation), ParserError> {
+    let start = p.current_char - 1;
+
+    loop {
+        match p.must_read_one()? {
+            c if c.is_numeric() || c.is_ascii_lowercase() || c.is_ascii_uppercase() || c > '}' => {}
+            c => {
+                return Ok((c, SourceLocation(start, p.current_char - 1)));
+            }
+        }
+    }
+}
+
+fn handle_common(
+    p: &mut Parser,
+    c: char,
+    global_references: &mut Option<Vec<SourceLocation>>,
+) -> Result<bool, ParserError> {
     match c {
         // Parse string
         '\'' => {
-            p.parse_quotes(QuoteKind::JSSingle)?;
+            p.parse_quotes(QuoteKind::JSSingle, global_references)?;
             Ok(true)
         }
         '"' => {
-            p.parse_quotes(QuoteKind::JSDouble)?;
+            p.parse_quotes(QuoteKind::JSDouble, global_references)?;
             Ok(true)
         }
         '`' => {
-            p.parse_quotes(QuoteKind::JSBacktick)?;
+            p.parse_quotes(QuoteKind::JSBacktick, global_references)?;
             Ok(true)
         }
         // Parse comment
         '/' if parse_comment(p)? => Ok(true),
         // Parse block like
         '{' => {
-            parse_block_like(p, '}')?;
+            parse_block_like(p, '}', global_references)?;
             Ok(true)
         }
         '(' => {
-            parse_block_like(p, ')')?;
+            parse_block_like(p, ')', global_references)?;
             Ok(true)
         }
         '[' => {
-            parse_block_like(p, ']')?;
+            parse_block_like(p, ']', global_references)?;
             Ok(true)
         }
         _ => Ok(false),

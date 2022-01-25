@@ -60,10 +60,10 @@ pub struct Style {
 }
 
 impl Parser {
-    pub fn parse(source: &str) -> Result<Self, ParserError> {
+    pub fn new(source: &str) -> Self {
         let source_chars: Vec<char> = source.chars().collect();
         let source_chars_len = source_chars.len();
-        let mut p = Self {
+        return Self {
             source_chars,
             source_chars_len,
             current_char: 0,
@@ -71,7 +71,11 @@ impl Parser {
             script: None,
             styles: Vec::new(),
         };
-        p.execute()?;
+    }
+
+    pub fn new_and_parse(source: &str) -> Result<Self, ParserError> {
+        let mut p = Self::new(source);
+        p.parse()?;
         Ok(p)
     }
 
@@ -115,7 +119,7 @@ impl Parser {
         }
     }
 
-    fn execute(&mut self) -> Result<(), ParserError> {
+    pub fn parse(&mut self) -> Result<(), ParserError> {
         while let Some(b) = self.read_one_skip_spacing() {
             match b {
                 '<' => {
@@ -296,14 +300,14 @@ impl Parser {
             Some(match self.must_read_one()? {
                 '"' => {
                     let start = self.current_char;
-                    self.parse_quotes(QuoteKind::HTMLDouble)?;
+                    self.parse_quotes(QuoteKind::HTMLDouble, &mut None)?;
                     let sl = SourceLocation(start, self.current_char - 1);
                     c = self.must_read_one()?;
                     sl
                 }
                 '\'' => {
                     let start = self.current_char;
-                    self.parse_quotes(QuoteKind::HTMLSingle)?;
+                    self.parse_quotes(QuoteKind::HTMLSingle, &mut None)?;
                     let sl = SourceLocation(start, self.current_char - 1);
                     c = self.must_read_one()?;
                     sl
@@ -473,7 +477,11 @@ impl Parser {
         }
     }
 
-    fn parse_quotes(&mut self, kind: QuoteKind) -> Result<(), ParserError> {
+    fn parse_quotes(
+        &mut self,
+        kind: QuoteKind,
+        global_references: &mut Option<Vec<SourceLocation>>,
+    ) -> Result<(), ParserError> {
         let (quote_char, escape): (char, bool) = match kind {
             QuoteKind::HTMLDouble => ('"', false),
             QuoteKind::HTMLSingle => ('\'', false),
@@ -496,7 +504,7 @@ impl Parser {
                 }
                 '$' if is_js_backtick && self.must_seek_one()? == '{' => {
                     self.current_char += 1;
-                    js::parse_block_like(self, '}')?;
+                    js::parse_block_like(self, '}', global_references)?;
                 }
                 c if c == quote_char => return Ok(()),
                 _ => {}

@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use super::super::template::Child;
-    use super::super::{Parser, SourceLocation, Tag, TagType};
+    use super::super::template::*;
+    use super::super::*;
 
     fn unwrap_element_child(children: &Vec<Child>, idx: usize) -> (Tag, Vec<Child>) {
         match children.get(idx).unwrap() {
@@ -24,7 +24,7 @@ mod tests {
 
     #[test]
     fn empty_template() {
-        let result = Parser::parse("").unwrap();
+        let result = Parser::new_and_parse("").unwrap();
 
         assert!(result.template.is_none());
         assert!(result.script.is_none());
@@ -33,7 +33,7 @@ mod tests {
 
     #[test]
     fn simple_template() {
-        let result = Parser::parse("<template><h1>hello !</h1></template>").unwrap();
+        let result = Parser::new_and_parse("<template><h1>hello !</h1></template>").unwrap();
 
         let template_content = result.template.clone().unwrap().content;
         assert_eq!(template_content.len(), 1);
@@ -50,7 +50,7 @@ mod tests {
 
     #[test]
     fn template_with_script() {
-        let result = Parser::parse("<script>export default {}</script>").unwrap();
+        let result = Parser::new_and_parse("<script>export default {}</script>").unwrap();
 
         assert!(result.template.is_none());
         assert_eq!(
@@ -62,7 +62,7 @@ mod tests {
 
     #[test]
     fn template_with_style() {
-        let result = Parser::parse("<style>a {color: red;}</style>").unwrap();
+        let result = Parser::new_and_parse("<style>a {color: red;}</style>").unwrap();
 
         assert!(result.template.is_none());
         assert!(result.script.is_none());
@@ -85,7 +85,7 @@ mod tests {
             <style lang=stylus other-arg=\"true\" scoped>h3 {color: blue;}</style>
         ";
 
-        let result = Parser::parse(input).unwrap();
+        let result = Parser::new_and_parse(input).unwrap();
 
         assert_eq!(result.template.as_ref().unwrap().content.len(), 1);
 
@@ -119,7 +119,7 @@ mod tests {
 
     #[test]
     fn cannot_have_multiple_templates() {
-        let result = Parser::parse(
+        let result = Parser::new_and_parse(
             "<template></template>
             <template></template>",
         );
@@ -132,7 +132,7 @@ mod tests {
 
     #[test]
     fn cannot_have_multiple_scripts() {
-        let result = Parser::parse(
+        let result = Parser::new_and_parse(
             "<script></script>
             <script></script>",
         );
@@ -145,7 +145,7 @@ mod tests {
 
     #[test]
     fn parse_template_content() {
-        let result = Parser::parse(
+        let result = Parser::new_and_parse(
             "<template>
                 <div>
                     <h1>idk</h1>
@@ -233,7 +233,85 @@ mod tests {
                 case, "{}",
             );
 
-            Parser::parse(&testing_code).unwrap();
+            Parser::new_and_parse(&testing_code).unwrap();
+        }
+    }
+
+    mod js_tests {
+        use super::*;
+
+        fn must_parse_js(js: &str, expected_global_vars: Vec<&str>) {
+            parse_js(js, expected_global_vars).unwrap();
+        }
+
+        fn parse_js(js: &str, expected_global_vars: Vec<&str>) -> Result<(), ParserError> {
+            let mut parser = Parser::new(&format!("{}{}", js, "}}"));
+            let global_var_locations = js::compile_template_var(&mut parser)?;
+
+            let mut global_var_locations_iter =
+                global_var_locations.iter().map(|e| e.string(&parser));
+            let mut expected_global_vars_iter = expected_global_vars.iter().map(|e| e.to_string());
+
+            loop {
+                match (
+                    expected_global_vars_iter.next(),
+                    global_var_locations_iter.next(),
+                ) {
+                    (None, None) => break,
+                    (expected, got) => assert_eq!(expected, got),
+                }
+            }
+
+            let mut global_vars = Vec::new();
+            for location in global_var_locations {
+                global_vars.push(location.string(&parser));
+            }
+
+            Ok(())
+        }
+
+        #[test]
+        fn var() {
+            must_parse_js("count", vec!["count"]);
+            must_parse_js("this.count", vec!["this"]);
+        }
+
+        #[test]
+        fn var_assignment() {
+            must_parse_js("count = 1", vec!["count"]);
+            must_parse_js("count += 1", vec!["count"]);
+            must_parse_js("count -= 1", vec!["count"]);
+            must_parse_js("count /= 1", vec!["count"]);
+            must_parse_js("count >>= 1", vec!["count"]);
+            must_parse_js("count <<= 1", vec!["count"]);
+
+            must_parse_js("foo.bar.baz = 1", vec!["foo"]);
+            must_parse_js("foo?.bar?.baz = 1", vec!["foo"]);
+            must_parse_js("foo['bar'].baz = 1", vec!["foo"]);
+            must_parse_js("foo?.['bar']?.baz = 1", vec!["foo"]);
+            must_parse_js("foo['bar']['baz'] = 1", vec!["foo"]);
+            must_parse_js("foo?.['bar']?.['baz'] = 1", vec!["foo"]);
+
+            must_parse_js("foo[bar][baz] = 1", vec!["foo", "bar", "baz"]);
+            must_parse_js("foo?.[bar]?.[baz] = 1", vec!["foo", "bar", "baz"]);
+        }
+
+        #[test]
+        fn check() {
+            must_parse_js("foo ?? bar", vec!["foo", "bar"]);
+            must_parse_js("foo > bar", vec!["foo", "bar"]);
+            must_parse_js("foo < bar", vec!["foo", "bar"]);
+            must_parse_js("foo == bar", vec!["foo", "bar"]);
+            must_parse_js("foo === bar", vec!["foo", "bar"]);
+            must_parse_js("foo != bar", vec!["foo", "bar"]);
+            must_parse_js("foo !== bar", vec!["foo", "bar"]);
+            must_parse_js("foo >= bar", vec!["foo", "bar"]);
+            must_parse_js("foo <= bar", vec!["foo", "bar"]);
+            must_parse_js("foo ? foo : bar", vec!["foo", "foo", "bar"]);
+            must_parse_js("foo || bar", vec!["foo", "bar"]);
+            must_parse_js("foo && bar", vec!["foo", "bar"]);
+
+            must_parse_js("this.foo && this.bar", vec!["this", "this"]);
         }
     }
 }

@@ -45,7 +45,7 @@ pub fn transform(code: &str, id: &str) -> Option<String> {
 }
 
 fn transform_main(code: &str, id: &str) -> Result<String, ParserError> {
-    let parsed_code = Parser::parse(code)?;
+    let parsed_code = Parser::new_and_parse(code)?;
 
     let resp: Vec<char> = match (parsed_code.template.as_ref(), parsed_code.script.as_ref()) {
         (_, Some(script)) => {
