@@ -15,9 +15,14 @@ mod tests {
             v => panic!("{:?}", v),
         }
     }
-    fn unwrap_var_child(children: &Vec<Child>, idx: usize) -> SourceLocation {
+    fn unwrap_var_child(
+        children: &Vec<Child>,
+        idx: usize,
+    ) -> (SourceLocation, Vec<SourceLocation>) {
         match children.get(idx).unwrap() {
-            Child::Var(source_location) => source_location.clone(),
+            Child::Var(source_location, global_vars) => {
+                (source_location.clone(), global_vars.clone())
+            }
             v => panic!("{:?}", v),
         }
     }
@@ -201,12 +206,14 @@ mod tests {
         let (_, inner_p_children) = unwrap_element_child(&children, 1);
         let def = unwrap_text_child(&result, &inner_p_children, 0);
         let ghi = unwrap_text_child(&result, &children, 2);
-        let jkl_var = unwrap_var_child(&children, 3);
+        let (jkl_var, jkl_var_global_refs) = unwrap_var_child(&children, 3);
 
         assert_eq!(abc.trim(), "abc");
         assert_eq!(def, "def");
         assert_eq!(ghi.trim(), "ghi");
         assert_eq!(jkl_var.string(&result), " jkl ");
+        assert_eq!(jkl_var_global_refs.len(), 1);
+        assert_eq!(jkl_var_global_refs.get(0).unwrap().string(&result), "jkl");
     }
 
     #[test]

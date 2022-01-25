@@ -15,7 +15,7 @@ pub fn compile(p: &mut Parser) -> Result<Vec<Child>, ParserError> {
 pub enum Child {
     Tag(Tag, Vec<Child>),
     Text(SourceLocation),
-    Var(SourceLocation),
+    Var(SourceLocation, Vec<SourceLocation>),
 }
 
 impl Child {
@@ -113,8 +113,11 @@ impl Child {
 
     fn compile_var(p: &mut Parser) -> Result<Self, ParserError> {
         let start = p.current_char;
-        js::compile_template_var(p)?;
-        Ok(Self::Var(SourceLocation(start, p.current_char - 2)))
+        let global_vars = js::compile_template_var(p)?;
+        Ok(Self::Var(
+            SourceLocation(start, p.current_char - 2),
+            global_vars,
+        ))
     }
 }
 
