@@ -1,4 +1,4 @@
-use super::{js, utils::is_space, Parser, ParserError, SourceLocation, Tag, TagType};
+use super::{js, utils::is_space, Parser, ParserError, SourceLocation, Tag, TagType, Template};
 
 pub fn compile(p: &mut Parser) -> Result<Vec<Child>, ParserError> {
     let mut compile_result = Child::compile_children(p, &mut Vec::new())?;
@@ -119,9 +119,60 @@ impl Child {
             global_vars,
         ))
     }
+
+    fn to_js(&self, resp: &mut Vec<char>) {
+        match self {
+            Self::Tag(t, children) => todo!("tag"),
+            Self::Text(location) => todo!("text"),
+            Self::Var(var, global_refs) => todo!("var"),
+        }
+    }
 }
 
 enum CompileAfterTextNode {
     Tag,
     Var,
+}
+
+const DEFAULT_CONF: &'static str = "
+__vue_2_file_default_export__.render = c => {
+    const _vm = this;
+    const _h = _vm.$createElement;
+    const _c = _vm._self._c || _h;
+    return ";
+
+/*
+_c('div', [
+    _c('h1', [
+        _vm._v(\"It wurks \" + _vm._s(_vm.count) + \" !\")
+    ]),
+    _c('button', { on: { \"click\": $event => { _vm.count++ } } }, [_vm._v(\"+\")]),
+    _c('button', { on: { \"click\": $event => { _vm.count-- } } }, [_vm._v(\"-\")]),
+])
+*/
+
+pub fn convert_template_to_js_render_fn(template: Template, resp: &mut Vec<char>) {
+    resp.append(&mut DEFAULT_CONF.chars().collect());
+
+    match template.content.len() {
+        0 => {
+            resp.push('[');
+            resp.push(']');
+        }
+        1 => {
+            template.content.get(0).unwrap().to_js(resp);
+        }
+        content_len => {
+            resp.push('[');
+            for (idx, child) in template.content.iter().enumerate() {
+                child.to_js(resp);
+                if idx + 1 != content_len {
+                    resp.push(',');
+                }
+            }
+            resp.push(']');
+        }
+    }
+
+    resp.append(&mut "\n};".chars().collect())
 }

@@ -1,7 +1,9 @@
 mod compiler;
 mod utils;
 
-use compiler::{error::ParserError, Parser, SourceLocation};
+use compiler::{
+    error::ParserError, template::convert_template_to_js_render_fn, Parser, SourceLocation,
+};
 // use utils::set_panic_hook;
 
 use wasm_bindgen::prelude::*;
@@ -61,9 +63,11 @@ fn transform_main(code: &str, id: &str) -> Result<String, ParserError> {
                     &mut SourceLocation(default_export_location.1, script.content.1)
                         .chars_vec(&parsed_code),
                 );
-                // TODO add render function
+                if let Some(template) = parsed_code.template {
+                    convert_template_to_js_render_fn(template, &mut resp);
+                }
                 resp.append(
-                    &mut "\n__vue_2_file_default_export__.render = c => c('span')\nexport default __vue_2_file_default_export__"
+                    &mut "\nexport default __vue_2_file_default_export__"
                         .chars()
                         .collect::<Vec<char>>(),
                 );
@@ -71,7 +75,7 @@ fn transform_main(code: &str, id: &str) -> Result<String, ParserError> {
             } else {
                 // This vue file doesn't seem to have a deafult export, lets add it
                 let mut resp = script.content.chars_vec(&parsed_code);
-                resp.append(&mut "\nexport default undefined".chars().collect::<Vec<char>>());
+                resp.append(&mut "\nexport default undefined;".chars().collect::<Vec<char>>());
                 resp
             }
         }

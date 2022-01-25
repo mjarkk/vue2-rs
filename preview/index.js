@@ -6,7 +6,7 @@ const App3 = Vue.component('test2', {
     data: () => ({
         count: 1,
     }),
-    render: function () {
+    render() {
         var _vm = this;
         var _h = _vm.$createElement;
         var _c = _vm._self._c || _h;
