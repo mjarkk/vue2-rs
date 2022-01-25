@@ -2,20 +2,17 @@
 
 A vue 2 template compiler written in rust
 
-### Development links
+## Development
 
-- html spec https://html.spec.whatwg.org/multipage/syntax.html#syntax-tag-name
-- vue file spec https://vue-loader.vuejs.org/spec.html#intro
-- vite writing a plugin https://vitejs.dev/guide/api-plugin.html
+### Links
 
-### Build with `wasm-pack build`
+- [html spec](https://html.spec.whatwg.org/multipage/syntax.html)
+- [vue file spec](https://vue-loader.vuejs.org/spec.html#intro)
+- [vite writing a plugin](https://vitejs.dev/guide/api-plugin.html)
 
+### Build WASM file and run the vite to test
 ```
-wasm-pack build --target nodejs --dev
+wasm-pack build --target nodejs --dev && npm run dev
 ```
 
-### Publish to NPM with `wasm-pack publish`
-
-```
-wasm-pack publish
-```
+You can inspect what the vite is doing on: [localhost:3000/__inspect](http://localhost:3000/__inspect)
