@@ -1,6 +1,10 @@
 # vue2-rs
 
-A vue 2 template compiler written in rust
+A vue 2 template compiler written in rust and exposed as a plugin for [Vite](https://vitejs.dev) and [Rollup.js](https://rollupjs.org/guide/en/)
+
+# WORK IN PROGRESS
+
+This is a project that is in progress
 
 ## Development
 
