@@ -121,8 +121,11 @@ impl Child {
     }
 
     fn to_js(&self, p: &Parser, resp: &mut Vec<char>) {
+        // TODO support html escape
         match self {
             Self::Tag(tag, children) => {
+                // Writes:
+                // _c('div', [_c(..), _c(..)])
                 resp.push('_');
                 resp.push('c');
                 resp.push('(');
@@ -132,10 +135,42 @@ impl Child {
                 }
                 resp.push('\'');
                 // TODO add args
-                // TODO add children
+                resp.push(',');
+                resp.push('[');
+                let children_max_idx = children.len() - 1;
+                for (idx, child) in children.iter().enumerate() {
+                    child.to_js(p, resp);
+                    if idx != children_max_idx {
+                        resp.push(',');
+                    }
+                }
+                resp.push(']');
                 resp.push(')');
             }
-            Self::Text(location) => todo!("text"),
+            Self::Text(location) => {
+                // Writes:
+                // _vm._v("foo bar")
+                resp.push('_');
+                resp.push('v');
+                resp.push('m');
+                resp.push('.');
+                resp.push('_');
+                resp.push('v');
+                resp.push('(');
+                resp.push('"');
+                for c in location.chars(p).iter() {
+                    match *c {
+                        '\\' | '"' => {
+                            // Add escape characters
+                            resp.push('\\');
+                            resp.push(*c);
+                        }
+                        c => resp.push(c),
+                    }
+                }
+                resp.push('"');
+                resp.push(')');
+            }
             Self::Var(var, global_refs) => todo!("var"),
         }
     }
