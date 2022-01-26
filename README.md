@@ -14,7 +14,7 @@ This is a project that is in progress
 - [vue file spec](https://vue-loader.vuejs.org/spec.html#intro)
 - [vite writing a plugin](https://vitejs.dev/guide/api-plugin.html)
 
-### Build WASM file and run the vite to test
+### Build WASM file and run vite to test
 ```
 wasm-pack build --target nodejs --dev && npm run dev
 ```
