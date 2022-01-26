@@ -120,9 +120,21 @@ impl Child {
         ))
     }
 
-    fn to_js(&self, resp: &mut Vec<char>) {
+    fn to_js(&self, p: &Parser, resp: &mut Vec<char>) {
         match self {
-            Self::Tag(t, children) => todo!("tag"),
+            Self::Tag(tag, children) => {
+                resp.push('_');
+                resp.push('c');
+                resp.push('(');
+                resp.push('\'');
+                for c in tag.name.chars(p).iter() {
+                    resp.push(*c);
+                }
+                resp.push('\'');
+                // TODO add args
+                // TODO add children
+                resp.push(')');
+            }
             Self::Text(location) => todo!("text"),
             Self::Var(var, global_refs) => todo!("var"),
         }
@@ -151,7 +163,12 @@ _c('div', [
 ])
 */
 
-pub fn convert_template_to_js_render_fn(template: Template, resp: &mut Vec<char>) {
+pub fn convert_template_to_js_render_fn(p: &Parser, resp: &mut Vec<char>) {
+    let template = match p.template.as_ref() {
+        Some(t) => t,
+        None => return,
+    };
+
     resp.append(&mut DEFAULT_CONF.chars().collect());
 
     match template.content.len() {
@@ -160,12 +177,12 @@ pub fn convert_template_to_js_render_fn(template: Template, resp: &mut Vec<char>
             resp.push(']');
         }
         1 => {
-            template.content.get(0).unwrap().to_js(resp);
+            template.content.get(0).unwrap().to_js(p, resp);
         }
         content_len => {
             resp.push('[');
             for (idx, child) in template.content.iter().enumerate() {
-                child.to_js(resp);
+                child.to_js(p, resp);
                 if idx + 1 != content_len {
                     resp.push(',');
                 }

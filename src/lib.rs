@@ -63,9 +63,7 @@ fn transform_main(code: &str, id: &str) -> Result<String, ParserError> {
                     &mut SourceLocation(default_export_location.1, script.content.1)
                         .chars_vec(&parsed_code),
                 );
-                if let Some(template) = parsed_code.template {
-                    convert_template_to_js_render_fn(template, &mut resp);
-                }
+                convert_template_to_js_render_fn(&parsed_code, &mut resp);
                 resp.append(
                     &mut "\nexport default __vue_2_file_default_export__"
                         .chars()
