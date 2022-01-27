@@ -244,16 +244,61 @@ mod tests {
         }
     }
 
+    mod template_to_render_method {
+        use super::*;
+
+        fn template_to_js_eq(html: &str, eq: &str) {
+            assert_eq!(template_to_js(html), eq);
+        }
+
+        fn template_to_js(html: &str) -> String {
+            let parser_input = format!("<template>{}</template>", html);
+            let result = Parser::new_and_parse(&parser_input).unwrap();
+            let template = result.template.as_ref().unwrap();
+            let children_as_js: Vec<String> = template
+                .content
+                .iter()
+                .map(|child| {
+                    let mut resp: Vec<char> = Vec::new();
+                    child.to_js(&result, &mut resp);
+                    resp.iter().collect::<String>()
+                })
+                .collect();
+
+            if children_as_js.len() == 1 {
+                children_as_js[0].clone()
+            } else {
+                children_as_js.join(",")
+            }
+        }
+
+        #[test]
+        fn static_elements_with_content() {
+            template_to_js_eq("<div></div>", "_c('div',[])");
+            template_to_js_eq("<div/>", "_c('div',[])");
+            template_to_js_eq("<h1>BOOOO</h1>", "_c('h1',[_vm._v(\"BOOOO\")])");
+            template_to_js_eq(
+                "<div><h1>BOOOO</h1></div>",
+                "_c('div',[_c('h1',[_vm._v(\"BOOOO\")])])",
+            );
+            template_to_js_eq(
+                "<div><h1>BOOOO</h1><p>This is a test</p></div>",
+                "_c('div',[_c('h1',[_vm._v(\"BOOOO\")]),_c('p',[_vm._v(\"This is a test\")])])",
+            );
+        }
+
+        // #[test]
+        // fn args() {
+        //     template_to_js_eq("<h1></h1>", "_c('h1',[_vm._v(\"BOOOO\")])");
+        // }
+    }
+
     mod js_tests {
         use super::*;
 
-        fn must_parse_js(js: &str, expected_global_vars: Vec<&str>) {
-            parse_js(js, expected_global_vars).unwrap();
-        }
-
-        fn parse_js(js: &str, expected_global_vars: Vec<&str>) -> Result<(), ParserError> {
+        fn parse_js(js: &str, expected_global_vars: Vec<&str>) {
             let mut parser = Parser::new(&format!("{}{}", js, "}}"));
-            let global_var_locations = js::compile_template_var(&mut parser)?;
+            let global_var_locations = js::compile_template_var(&mut parser).unwrap();
 
             let mut global_var_locations_iter =
                 global_var_locations.iter().map(|e| e.string(&parser));
@@ -273,52 +318,50 @@ mod tests {
             for location in global_var_locations {
                 global_vars.push(location.string(&parser));
             }
-
-            Ok(())
         }
 
         #[test]
         fn var() {
-            must_parse_js("count", vec!["count"]);
-            must_parse_js("this.count", vec!["this"]);
+            parse_js("count", vec!["count"]);
+            parse_js("this.count", vec!["this"]);
         }
 
         #[test]
         fn var_assignment() {
-            must_parse_js("count = 1", vec!["count"]);
-            must_parse_js("count += 1", vec!["count"]);
-            must_parse_js("count -= 1", vec!["count"]);
-            must_parse_js("count /= 1", vec!["count"]);
-            must_parse_js("count >>= 1", vec!["count"]);
-            must_parse_js("count <<= 1", vec!["count"]);
+            parse_js("count = 1", vec!["count"]);
+            parse_js("count += 1", vec!["count"]);
+            parse_js("count -= 1", vec!["count"]);
+            parse_js("count /= 1", vec!["count"]);
+            parse_js("count >>= 1", vec!["count"]);
+            parse_js("count <<= 1", vec!["count"]);
 
-            must_parse_js("foo.bar.baz = 1", vec!["foo"]);
-            must_parse_js("foo?.bar?.baz = 1", vec!["foo"]);
-            must_parse_js("foo['bar'].baz = 1", vec!["foo"]);
-            must_parse_js("foo?.['bar']?.baz = 1", vec!["foo"]);
-            must_parse_js("foo['bar']['baz'] = 1", vec!["foo"]);
-            must_parse_js("foo?.['bar']?.['baz'] = 1", vec!["foo"]);
+            parse_js("foo.bar.baz = 1", vec!["foo"]);
+            parse_js("foo?.bar?.baz = 1", vec!["foo"]);
+            parse_js("foo['bar'].baz = 1", vec!["foo"]);
+            parse_js("foo?.['bar']?.baz = 1", vec!["foo"]);
+            parse_js("foo['bar']['baz'] = 1", vec!["foo"]);
+            parse_js("foo?.['bar']?.['baz'] = 1", vec!["foo"]);
 
-            must_parse_js("foo[bar][baz] = 1", vec!["foo", "bar", "baz"]);
-            must_parse_js("foo?.[bar]?.[baz] = 1", vec!["foo", "bar", "baz"]);
+            parse_js("foo[bar][baz] = 1", vec!["foo", "bar", "baz"]);
+            parse_js("foo?.[bar]?.[baz] = 1", vec!["foo", "bar", "baz"]);
         }
 
         #[test]
         fn check() {
-            must_parse_js("foo ?? bar", vec!["foo", "bar"]);
-            must_parse_js("foo > bar", vec!["foo", "bar"]);
-            must_parse_js("foo < bar", vec!["foo", "bar"]);
-            must_parse_js("foo == bar", vec!["foo", "bar"]);
-            must_parse_js("foo === bar", vec!["foo", "bar"]);
-            must_parse_js("foo != bar", vec!["foo", "bar"]);
-            must_parse_js("foo !== bar", vec!["foo", "bar"]);
-            must_parse_js("foo >= bar", vec!["foo", "bar"]);
-            must_parse_js("foo <= bar", vec!["foo", "bar"]);
-            must_parse_js("foo ? foo : bar", vec!["foo", "foo", "bar"]);
-            must_parse_js("foo || bar", vec!["foo", "bar"]);
-            must_parse_js("foo && bar", vec!["foo", "bar"]);
+            parse_js("foo ?? bar", vec!["foo", "bar"]);
+            parse_js("foo > bar", vec!["foo", "bar"]);
+            parse_js("foo < bar", vec!["foo", "bar"]);
+            parse_js("foo == bar", vec!["foo", "bar"]);
+            parse_js("foo === bar", vec!["foo", "bar"]);
+            parse_js("foo != bar", vec!["foo", "bar"]);
+            parse_js("foo !== bar", vec!["foo", "bar"]);
+            parse_js("foo >= bar", vec!["foo", "bar"]);
+            parse_js("foo <= bar", vec!["foo", "bar"]);
+            parse_js("foo ? foo : bar", vec!["foo", "foo", "bar"]);
+            parse_js("foo || bar", vec!["foo", "bar"]);
+            parse_js("foo && bar", vec!["foo", "bar"]);
 
-            must_parse_js("this.foo && this.bar", vec!["this", "this"]);
+            parse_js("this.foo && this.bar", vec!["this", "this"]);
         }
     }
 }

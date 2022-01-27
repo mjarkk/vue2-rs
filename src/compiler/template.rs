@@ -120,7 +120,7 @@ impl Child {
         ))
     }
 
-    fn to_js(&self, p: &Parser, resp: &mut Vec<char>) {
+    pub fn to_js(&self, p: &Parser, resp: &mut Vec<char>) {
         // TODO support html escape
         match self {
             Self::Tag(tag, children) => {
@@ -137,11 +137,14 @@ impl Child {
                 // TODO add args
                 resp.push(',');
                 resp.push('[');
-                let children_max_idx = children.len() - 1;
-                for (idx, child) in children.iter().enumerate() {
-                    child.to_js(p, resp);
-                    if idx != children_max_idx {
-                        resp.push(',');
+                let children_len = children.len();
+                if children_len != 0 {
+                    let children_max_idx = children_len - 1;
+                    for (idx, child) in children.iter().enumerate() {
+                        child.to_js(p, resp);
+                        if idx != children_max_idx {
+                            resp.push(',');
+                        }
                     }
                 }
                 resp.push(']');
