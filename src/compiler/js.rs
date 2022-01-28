@@ -1,5 +1,42 @@
 use super::{template, utils::is_space, Parser, ParserError, QuoteKind, SourceLocation, TagType};
 
+pub fn add_vm_references(
+    p: &Parser,
+    dest: &mut Vec<char>,
+    js: &SourceLocation,
+    js_global_refs: &Vec<SourceLocation>,
+) {
+    let mut js_global_refs_iter = js_global_refs.iter();
+
+    let mut last = SourceLocation(js.0, js.0);
+    let mut current = if let Some(location) = js_global_refs_iter.next() {
+        location
+    } else {
+        js.chars_write_to_vec(p, dest);
+        return;
+    };
+
+    loop {
+        SourceLocation(last.1, current.0).chars_write_to_vec(p, dest);
+        dest.push('_');
+        dest.push('v');
+        dest.push('m');
+        if !current.eq(p, "this".chars()) {
+            dest.push('.');
+            current.chars_write_to_vec(p, dest);
+        }
+
+        last = current.clone();
+        if let Some(location) = js_global_refs_iter.next() {
+            current = location;
+        } else {
+            break;
+        }
+    }
+
+    SourceLocation(current.1, js.1).chars_write_to_vec(p, dest);
+}
+
 pub fn compile_template_var(p: &mut Parser) -> Result<Vec<SourceLocation>, ParserError> {
     let mut global_references: Option<Vec<SourceLocation>> = Some(Vec::with_capacity(1));
 

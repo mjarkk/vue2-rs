@@ -218,9 +218,18 @@ mod tests {
 
     #[test]
     fn parse_doc_type() {
+        // Doctype above the vue component
         Parser::new_and_parse(
             "<!DOCTYPE html>
             <template>
+            </template>",
+        )
+        .unwrap();
+
+        // Doctype within the template
+        Parser::new_and_parse(
+            "<template>
+            <!DOCTYPE html>
             </template>",
         )
         .unwrap();
@@ -306,7 +315,7 @@ mod tests {
     mod js_tests {
         use super::*;
 
-        fn parse_js(js: &str, expected_global_vars: Vec<&str>) {
+        fn parse_js(js: &str, expected_global_vars: Vec<&str>, expected_result: &str) {
             let mut parser = Parser::new(&format!("{}{}", js, "}}"));
             let global_var_locations = js::compile_template_var(&mut parser).unwrap();
 
@@ -325,53 +334,92 @@ mod tests {
             }
 
             let mut global_vars = Vec::new();
-            for location in global_var_locations {
+            for location in global_var_locations.iter() {
                 global_vars.push(location.string(&parser));
             }
+
+            let mut js_with_vm_references = Vec::with_capacity(js.len() + 4);
+            js::add_vm_references(
+                &parser,
+                &mut js_with_vm_references,
+                &SourceLocation(0, js.len()),
+                &global_var_locations,
+            );
+            let js_with_vm_references_str: String = js_with_vm_references.iter().collect();
+
+            assert_eq!(js_with_vm_references_str, expected_result);
         }
 
         #[test]
         fn var() {
-            parse_js("count", vec!["count"]);
-            parse_js("this.count", vec!["this"]);
+            parse_js("count", vec!["count"], "_vm.count");
+            parse_js("this.count", vec!["this"], "_vm.count");
         }
 
         #[test]
         fn var_assignment() {
-            parse_js("count = 1", vec!["count"]);
-            parse_js("count += 1", vec!["count"]);
-            parse_js("count -= 1", vec!["count"]);
-            parse_js("count /= 1", vec!["count"]);
-            parse_js("count >>= 1", vec!["count"]);
-            parse_js("count <<= 1", vec!["count"]);
+            parse_js("count = 1", vec!["count"], "_vm.count = 1");
+            parse_js("count += 1", vec!["count"], "_vm.count += 1");
+            parse_js("count -= 1", vec!["count"], "_vm.count -= 1");
+            parse_js("count /= 1", vec!["count"], "_vm.count /= 1");
+            parse_js("count >>= 1", vec!["count"], "_vm.count >>= 1");
+            parse_js("count <<= 1", vec!["count"], "_vm.count <<= 1");
 
-            parse_js("foo.bar.baz = 1", vec!["foo"]);
-            parse_js("foo?.bar?.baz = 1", vec!["foo"]);
-            parse_js("foo['bar'].baz = 1", vec!["foo"]);
-            parse_js("foo?.['bar']?.baz = 1", vec!["foo"]);
-            parse_js("foo['bar']['baz'] = 1", vec!["foo"]);
-            parse_js("foo?.['bar']?.['baz'] = 1", vec!["foo"]);
+            parse_js("foo.bar.baz = 1", vec!["foo"], "_vm.foo.bar.baz = 1");
+            parse_js("foo?.bar?.baz = 1", vec!["foo"], "_vm.foo?.bar?.baz = 1");
+            parse_js("foo['bar'].baz = 1", vec!["foo"], "_vm.foo['bar'].baz = 1");
+            parse_js(
+                "foo?.['bar']?.baz = 1",
+                vec!["foo"],
+                "_vm.foo?.['bar']?.baz = 1",
+            );
+            parse_js(
+                "foo['bar']['baz'] = 1",
+                vec!["foo"],
+                "_vm.foo['bar']['baz'] = 1",
+            );
+            parse_js(
+                "foo?.['bar']?.['baz'] = 1",
+                vec!["foo"],
+                "_vm.foo?.['bar']?.['baz'] = 1",
+            );
 
-            parse_js("foo[bar][baz] = 1", vec!["foo", "bar", "baz"]);
-            parse_js("foo?.[bar]?.[baz] = 1", vec!["foo", "bar", "baz"]);
+            parse_js(
+                "foo[bar][baz] = 1",
+                vec!["foo", "bar", "baz"],
+                "_vm.foo[_vm.bar][_vm.baz] = 1",
+            );
+            parse_js(
+                "foo?.[bar]?.[baz] = 1",
+                vec!["foo", "bar", "baz"],
+                "_vm.foo?.[_vm.bar]?.[_vm.baz] = 1",
+            );
         }
 
         #[test]
         fn check() {
-            parse_js("foo ?? bar", vec!["foo", "bar"]);
-            parse_js("foo > bar", vec!["foo", "bar"]);
-            parse_js("foo < bar", vec!["foo", "bar"]);
-            parse_js("foo == bar", vec!["foo", "bar"]);
-            parse_js("foo === bar", vec!["foo", "bar"]);
-            parse_js("foo != bar", vec!["foo", "bar"]);
-            parse_js("foo !== bar", vec!["foo", "bar"]);
-            parse_js("foo >= bar", vec!["foo", "bar"]);
-            parse_js("foo <= bar", vec!["foo", "bar"]);
-            parse_js("foo ? foo : bar", vec!["foo", "foo", "bar"]);
-            parse_js("foo || bar", vec!["foo", "bar"]);
-            parse_js("foo && bar", vec!["foo", "bar"]);
+            parse_js("foo ?? bar", vec!["foo", "bar"], "_vm.foo ?? _vm.bar");
+            parse_js("foo > bar", vec!["foo", "bar"], "_vm.foo > _vm.bar");
+            parse_js("foo < bar", vec!["foo", "bar"], "_vm.foo < _vm.bar");
+            parse_js("foo == bar", vec!["foo", "bar"], "_vm.foo == _vm.bar");
+            parse_js("foo === bar", vec!["foo", "bar"], "_vm.foo === _vm.bar");
+            parse_js("foo != bar", vec!["foo", "bar"], "_vm.foo != _vm.bar");
+            parse_js("foo !== bar", vec!["foo", "bar"], "_vm.foo !== _vm.bar");
+            parse_js("foo >= bar", vec!["foo", "bar"], "_vm.foo >= _vm.bar");
+            parse_js("foo <= bar", vec!["foo", "bar"], "_vm.foo <= _vm.bar");
+            parse_js(
+                "foo ? foo : bar",
+                vec!["foo", "foo", "bar"],
+                "_vm.foo ? _vm.foo : _vm.bar",
+            );
+            parse_js("foo || bar", vec!["foo", "bar"], "_vm.foo || _vm.bar");
+            parse_js("foo && bar", vec!["foo", "bar"], "_vm.foo && _vm.bar");
 
-            parse_js("this.foo && this.bar", vec!["this", "this"]);
+            parse_js(
+                "this.foo && this.bar",
+                vec!["this", "this"],
+                "_vm.foo && _vm.bar",
+            );
         }
     }
 }
