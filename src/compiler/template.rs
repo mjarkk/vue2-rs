@@ -1,5 +1,107 @@
 use super::{js, utils::is_space, Parser, ParserError, SourceLocation, Tag, TagType};
 
+// parse_tag is expected to be next to the open indicator (<) at the first character of the tag name
+// TODO support upper case tag names
+pub fn parse_tag(p: &mut Parser) -> Result<Tag, ParserError> {
+    let mut tag = Tag {
+        type_: TagType::Open,
+        name: SourceLocation(p.current_char, 0),
+        args: Vec::new(),
+    };
+
+    let mut is_close_tag = false;
+    let mut c = p
+        .seek_one()
+        .ok_or(ParserError::eof("parse_tag check closure tag"))?;
+
+    if c == '/' {
+        tag.type_ = TagType::Close;
+        tag.name.0 += 1;
+        p.current_char += 1;
+        is_close_tag = true;
+    } else if c == '!' {
+        p.current_char += 1;
+
+        let mut doctype = "DOCTYPE ".chars();
+        while let Some(doctype_c) = doctype.next() {
+            let c = p.must_read_one()?;
+            if doctype_c != c {
+                return Err(ParserError::new(
+                    "parse_tag",
+                    format!(
+                        "expected '{}' of \"<!DOCTYPE\" but got '{}'",
+                        doctype_c.to_string(),
+                        c.to_string()
+                    ),
+                ));
+            }
+        }
+
+        while p.must_read_one()? != '>' {}
+        return Ok(Tag {
+            type_: TagType::DocType,
+            name: SourceLocation::empty(),
+            args: vec![],
+        });
+    }
+
+    // Parse names
+    loop {
+        match p.must_read_one()? {
+            'a'..='z' | 'A'..='Z' | '0'..='9' => {}
+            _ => {
+                p.current_char -= 1;
+                tag.name.1 = p.current_char;
+                break;
+            }
+        };
+    }
+
+    if tag.name.1 == 0 {
+        return Err(ParserError::new("parse_tag", "expected tag name"));
+    }
+
+    // Parse args
+    loop {
+        c = p.must_read_one_skip_spacing()?;
+        c = match p.try_parse_arg(c)? {
+            Some((arg, next_char)) => {
+                tag.args.push(arg);
+                next_char
+            }
+            None => c,
+        };
+
+        match c {
+            '/' => {
+                if is_close_tag {
+                    return Err(ParserError::new(
+                        "parse_tag",
+                        "/ not allowed after name in closeing tag",
+                    ));
+                }
+                c = p.must_read_one_skip_spacing()?;
+                if c != '>' {
+                    return Err(ParserError::new(
+                        "parse_tag",
+                        format!("expected > but got '{}'", c.to_string()),
+                    ));
+                }
+                tag.type_ = TagType::OpenAndClose;
+                return Ok(tag);
+            }
+            '>' => return Ok(tag),
+            c if is_space(c) => {}
+            c => {
+                return Err(ParserError::new(
+                    "parse_tag",
+                    format!("unexpected character '{}'", c.to_string()),
+                ))
+            }
+        }
+    }
+}
+
 pub fn compile(p: &mut Parser) -> Result<Vec<Child>, ParserError> {
     let mut compile_result = Child::compile_children(p, &mut Vec::new())?;
     loop {
@@ -32,7 +134,7 @@ impl Child {
 
             match compile_now {
                 CompileAfterTextNode::Tag => {
-                    let tag = p.parse_tag()?;
+                    let tag = parse_tag(p)?;
                     match tag.type_ {
                         TagType::Close => {
                             let mut found = false;

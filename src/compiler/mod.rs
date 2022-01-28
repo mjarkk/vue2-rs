@@ -192,7 +192,7 @@ impl Parser {
     }
 
     fn parse_top_level_tag(&mut self) -> Result<(TopLevelTag, Tag), ParserError> {
-        let parsed_tag = self.parse_tag()?;
+        let parsed_tag = template::parse_tag(self)?;
         if let TagType::DocType = parsed_tag.type_ {
             return Ok((TopLevelTag::DocType, parsed_tag));
         }
@@ -333,7 +333,7 @@ impl Parser {
                 ("text", true, |_, v| TagArg::Text(v)),
                 ("html", true, |_, v| TagArg::Html(v)),
                 ("show", true, |_, v| TagArg::Show(v)),
-                ("once", false, |_, v| TagArg::Once(v)),
+                ("once", false, |_, _| TagArg::Once),
                 ("model", true, |_, v| TagArg::Model(v)),
                 ("cloak", true, |_, v| TagArg::Cloak(v)),
                 ("else-if", true, |_, v| TagArg::ElseIf(v)),
@@ -350,13 +350,12 @@ impl Parser {
                 let (key, expects_argument, make_result_tag) = vue_directives[idx];
 
                 if has_value != expects_argument {
-                    let key_as_str = key_location.offset_start(-2).string(self);
                     Err(ParserError::new(
                         "try_parse_arg",
                         if expects_argument {
-                            format!("expected an argument value for \"{}\"", key_as_str)
+                            format!("expected an argument value for \"v-{}\"", key)
                         } else {
-                            format!("expected no argument value for \"{}\"", key_as_str)
+                            format!("expected no argument value for \"v-{}\"", key)
                         },
                     ))
                 } else {
@@ -380,108 +379,6 @@ impl Parser {
             }
         } else {
             Ok(Some((TagArg::Default(key_location, value_location), c)))
-        }
-    }
-
-    // parse_tag is expected to be next to the open indicator (<) at the first character of the tag name
-    // TODO support upper case tag names
-    fn parse_tag(&mut self) -> Result<Tag, ParserError> {
-        let mut tag = Tag {
-            type_: TagType::Open,
-            name: SourceLocation(self.current_char, 0),
-            args: Vec::new(),
-        };
-
-        let mut is_close_tag = false;
-        let mut c = self
-            .seek_one()
-            .ok_or(ParserError::eof("parse_tag check closure tag"))?;
-
-        if c == '/' {
-            tag.type_ = TagType::Close;
-            tag.name.0 += 1;
-            self.current_char += 1;
-            is_close_tag = true;
-        } else if c == '!' {
-            self.current_char += 1;
-
-            let mut doctype = "DOCTYPE ".chars();
-            while let Some(doctype_c) = doctype.next() {
-                let c = self.must_read_one()?;
-                if doctype_c != c {
-                    return Err(ParserError::new(
-                        "parse_tag",
-                        format!(
-                            "expected '{}' of \"<!DOCTYPE\" but got '{}'",
-                            doctype_c.to_string(),
-                            c.to_string()
-                        ),
-                    ));
-                }
-            }
-
-            while self.must_read_one()? != '>' {}
-            return Ok(Tag {
-                type_: TagType::DocType,
-                name: SourceLocation::empty(),
-                args: vec![],
-            });
-        }
-
-        // Parse names
-        loop {
-            match self.must_read_one()? {
-                'a'..='z' | 'A'..='Z' | '0'..='9' => {}
-                _ => {
-                    self.current_char -= 1;
-                    tag.name.1 = self.current_char;
-                    break;
-                }
-            };
-        }
-
-        if tag.name.1 == 0 {
-            return Err(ParserError::new("parse_tag", "expected tag name"));
-        }
-
-        // Parse args
-        loop {
-            c = self.must_read_one_skip_spacing()?;
-            c = match self.try_parse_arg(c)? {
-                Some((arg, next_char)) => {
-                    tag.args.push(arg);
-                    next_char
-                }
-                None => c,
-            };
-
-            match c {
-                '/' => {
-                    if is_close_tag {
-                        return Err(ParserError::new(
-                            "parse_tag",
-                            "/ not allowed after name in closeing tag",
-                        ));
-                    }
-                    c = self.must_read_one_skip_spacing()?;
-                    if c != '>' {
-                        return Err(ParserError::new(
-                            "parse_tag",
-                            format!("expected > but got '{}'", c.to_string()),
-                        ));
-                    }
-                    tag.type_ = TagType::OpenAndClose;
-                    return Ok(tag);
-                }
-                '>' => return Ok(tag),
-                c if is_space(c) => {}
-                c => {
-                    return Err(ParserError::new(
-                        "parse_tag",
-                        format!("unexpected character '{}'", c.to_string()),
-                    ))
-                }
-            }
         }
     }
 
@@ -696,7 +593,7 @@ pub enum TagArg {
     Slot(SourceLocation),                            // v-slot=""
     Pre(SourceLocation),                             // v-pre=""
     Cloak(SourceLocation),                           // v-cloak=""
-    Once(SourceLocation),                            // v-once=""
+    Once,                                            // v-once
 }
 
 impl TagArg {
@@ -758,7 +655,7 @@ impl TagArg {
             Self::Slot(_) => todo("v-slot"),
             Self::Pre(_) => todo("v-pre"),
             Self::Cloak(_) => todo("v-cloak"),
-            Self::Once(_) => todo("v-once"),
+            Self::Once => todo("v-once"),
         }
     }
     fn key_eq(&self, parser: &Parser, key: &str) -> bool {
@@ -793,7 +690,7 @@ impl TagArg {
             Self::Slot(_) => key == "v-slot",
             Self::Pre(_) => key == "v-pre",
             Self::Cloak(_) => key == "v-cloak",
-            Self::Once(_) => key == "v-once",
+            Self::Once => key == "v-once",
         }
     }
     fn value(&self) -> SourceLocation {
@@ -810,8 +707,8 @@ impl TagArg {
             | Self::Model(v)
             | Self::Slot(v)
             | Self::Pre(v)
-            | Self::Cloak(v)
-            | Self::Once(v) => v.clone(),
+            | Self::Cloak(v) => v.clone(),
+            Self::Once => SourceLocation::empty(),
             Self::Else => SourceLocation::empty(),
         }
     }
@@ -877,6 +774,7 @@ impl SourceLocation {
         let mut disabled_entries = 0;
 
         let mut self_iter = self.chars(parser).iter();
+        let mut return_idx: Option<usize> = None;
         loop {
             if let Some(a) = self_iter.next() {
                 for idx in 0..results.len() {
@@ -888,17 +786,17 @@ impl SourceLocation {
                                     continue;
                                 }
                             } else if can_start_with {
-                                return Some(idx);
+                                return_idx = Some(idx);
+                                continue;
                             }
                             *results.get_mut(idx).unwrap() = None;
-
                             disabled_entries += 1;
-                            if disabled_entries == results.len() {
-                                return None;
-                            }
                         }
                         _ => {}
                     }
+                }
+                if disabled_entries == results.len() {
+                    return return_idx;
                 }
             } else {
                 for idx in 0..results.len() {

@@ -1,4 +1,4 @@
-use super::{utils::is_space, Parser, ParserError, QuoteKind, SourceLocation, TagType};
+use super::{template, utils::is_space, Parser, ParserError, QuoteKind, SourceLocation, TagType};
 
 pub fn compile_template_var(p: &mut Parser) -> Result<Vec<SourceLocation>, ParserError> {
     let mut global_references: Option<Vec<SourceLocation>> = Some(Vec::with_capacity(1));
@@ -64,7 +64,7 @@ pub fn compile_script_content(p: &mut Parser) -> Result<Option<SourceLocation>, 
             '<' => {
                 match p.must_seek_one()? {
                     '/' | 'a'..='z' | 'A'..='Z' | '0'..='9' => {
-                        match p.parse_tag() {
+                        match template::parse_tag(p) {
                             Err(e) => {
                                 if e.is_eof() {
                                     return Err(e);
