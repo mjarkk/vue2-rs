@@ -218,7 +218,7 @@ mod tests {
 
     #[test]
     fn parse_doc_type() {
-        let result = Parser::new_and_parse(
+        Parser::new_and_parse(
             "<!DOCTYPE html>
             <template>
             </template>",

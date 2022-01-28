@@ -64,6 +64,7 @@ impl Child {
                         TagType::OpenAndClose => {
                             resp.push(Self::Tag(tag, Vec::new()));
                         }
+                        TagType::DocType => {} // Skip this tag
                     };
                 }
                 CompileAfterTextNode::Var => {

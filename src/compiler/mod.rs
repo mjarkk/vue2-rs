@@ -7,28 +7,6 @@ pub mod utils;
 use error::ParserError;
 use utils::is_space;
 
-// const INPUT: &'static str = "
-// <template>
-//     <h1>Hello world</h1>
-// </template>
-
-// <script>
-// export default {}
-// </script>
-
-// <style lang=\"stylus\" scoped>
-// h1
-//     color red
-// </style>
-// ";
-
-// fn main() {
-//     match Parser::parse(INPUT) {
-//         Err(e) => panic!("{}", e.to_string()),
-//         Ok(v) => println!("{:#?}", v),
-//     }
-// }
-
 #[derive(Debug)]
 pub struct Parser {
     pub source_chars: Vec<char>,
@@ -125,6 +103,7 @@ impl Parser {
                 '<' => {
                     let top_level_tag = self.parse_top_level_tag()?;
                     match top_level_tag.1.type_ {
+                        TagType::DocType => {},
                         TagType::Close => return Err(ParserError::new("execute", "found tag closure without open")),
                         TagType::OpenAndClose => return Err(ParserError::new("execute", "tag type not allowed on top level")),
                         TagType::Open => {},
@@ -142,6 +121,7 @@ impl Parser {
                     };
 
                     match top_level_tag.0 {
+                        TopLevelTag::DocType => continue,
                         TopLevelTag::Template => {
                             if self.template.is_some() {
                                 return Err(ParserError::new("execute", "can't have multiple templates in your code"));
@@ -213,6 +193,9 @@ impl Parser {
 
     fn parse_top_level_tag(&mut self) -> Result<(TopLevelTag, Tag), ParserError> {
         let parsed_tag = self.parse_tag()?;
+        if let TagType::DocType = parsed_tag.type_ {
+            return Ok((TopLevelTag::DocType, parsed_tag));
+        }
 
         let top_level_tag = if parsed_tag.name.eq(self, &mut "template".chars()) {
             TopLevelTag::Template
@@ -350,7 +333,7 @@ impl Parser {
                 ("text", true, |_, v| TagArg::Text(v)),
                 ("html", true, |_, v| TagArg::Html(v)),
                 ("show", true, |_, v| TagArg::Show(v)),
-                ("once", true, |_, v| TagArg::Once(v)),
+                ("once", false, |_, v| TagArg::Once(v)),
                 ("model", true, |_, v| TagArg::Model(v)),
                 ("cloak", true, |_, v| TagArg::Cloak(v)),
                 ("else-if", true, |_, v| TagArg::ElseIf(v)),
@@ -367,13 +350,14 @@ impl Parser {
                 let (key, expects_argument, make_result_tag) = vue_directives[idx];
 
                 if has_value != expects_argument {
+                    let key_as_str = key_location.offset_start(-2).string(self);
                     Err(ParserError::new(
                         "try_parse_arg",
-                        format!(
-                            "expected {} argument value for \"{}\"",
-                            if expects_argument { "an" } else { "no" },
-                            key_location.string(self)
-                        ),
+                        if expects_argument {
+                            format!("expected an argument value for \"{}\"", key_as_str)
+                        } else {
+                            format!("expected no argument value for \"{}\"", key_as_str)
+                        },
                     ))
                 } else {
                     key_location.0 += key.len();
@@ -383,7 +367,7 @@ impl Parser {
 
                     let tag = make_result_tag(
                         key_location,
-                        value_location.unwrap_or(SourceLocation(0, 0)),
+                        value_location.unwrap_or(SourceLocation::empty()),
                     );
                     Ok(Some((tag, c)))
                 }
@@ -418,6 +402,30 @@ impl Parser {
             tag.name.0 += 1;
             self.current_char += 1;
             is_close_tag = true;
+        } else if c == '!' {
+            self.current_char += 1;
+
+            let mut doctype = "DOCTYPE ".chars();
+            while let Some(doctype_c) = doctype.next() {
+                let c = self.must_read_one()?;
+                if doctype_c != c {
+                    return Err(ParserError::new(
+                        "parse_tag",
+                        format!(
+                            "expected '{}' of \"<!DOCTYPE\" but got '{}'",
+                            doctype_c.to_string(),
+                            c.to_string()
+                        ),
+                    ));
+                }
+            }
+
+            while self.must_read_one()? != '>' {}
+            return Ok(Tag {
+                type_: TagType::DocType,
+                name: SourceLocation::empty(),
+                args: vec![],
+            });
         }
 
         // Parse names
@@ -701,7 +709,7 @@ impl TagArg {
 
         match self {
             Self::Default(key, value) => {
-                let key_value = (key.clone(), value.clone());
+                let kv = (key.clone(), value.clone());
 
                 let add_to_list = if is_custom_component {
                     &mut add_to.static_props
@@ -710,13 +718,13 @@ impl TagArg {
                 };
 
                 if let Some(list) = add_to_list.as_mut() {
-                    list.push(key_value);
+                    list.push(kv);
                 } else {
-                    *add_to_list = Some(vec![key_value])
+                    *add_to_list = Some(vec![kv])
                 }
             }
             Self::Bind(key, value) => {
-                let key_value = (key.clone(), value.clone());
+                let kv = (key.clone(), value.clone());
 
                 let add_to_list = if is_custom_component {
                     &mut add_to.js_props
@@ -725,12 +733,20 @@ impl TagArg {
                 };
 
                 if let Some(list) = add_to_list.as_mut() {
-                    list.push(key_value);
+                    list.push(kv);
                 } else {
-                    *add_to_list = Some(vec![key_value])
+                    *add_to_list = Some(vec![kv])
                 }
             }
-            Self::On(_, _) => todo("v-on"),
+            Self::On(key, value) => {
+                let kv = (key.clone(), value.clone());
+
+                if let Some(on) = add_to.on.as_mut() {
+                    on.push(kv);
+                } else {
+                    add_to.on = Some(vec![kv]);
+                }
+            }
             Self::Text(_) => todo("v-text"),
             Self::Html(_) => todo("v-html"),
             Self::Show(_) => todo("v-show"),
@@ -807,6 +823,10 @@ pub struct SourceLocation(pub usize, pub usize);
 impl SourceLocation {
     fn empty() -> Self {
         SourceLocation(0, 0)
+    }
+    pub fn offset_start(mut self, offset: isize) -> Self {
+        self.0 = ((self.0 as isize) + offset) as usize;
+        self
     }
     pub fn chars<'a>(&self, parser: &'a Parser) -> &'a [char] {
         if self.is_empty() {
@@ -910,6 +930,7 @@ impl SourceLocation {
 
 #[derive(Debug, Clone)]
 pub enum TagType {
+    DocType,
     Open,
     OpenAndClose,
     Close,
@@ -918,6 +939,7 @@ pub enum TagType {
 impl TagType {
     fn to_string(&self) -> &'static str {
         match self {
+            Self::DocType => "DOCTYPE",
             Self::Open => "open",
             Self::OpenAndClose => "inline",
             Self::Close => "close",
@@ -927,6 +949,7 @@ impl TagType {
 
 #[derive(Debug)]
 enum TopLevelTag {
+    DocType,
     Template,
     Script,
     Style,
