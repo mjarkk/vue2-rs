@@ -229,10 +229,9 @@ impl Child {
             Self::Tag(tag, children) => {
                 // Writes:
                 // _c('div', [_c(..), _c(..)])
-                resp.push('_');
-                resp.push('c');
-                resp.push('(');
-                resp.push('\'');
+                for c in "_c('".chars() {
+                    resp.push(c);
+                }
                 for c in tag.name.chars(p).iter() {
                     resp.push(*c);
                 }
@@ -265,14 +264,9 @@ impl Child {
             Self::Text(location) => {
                 // Writes:
                 // _vm._v("foo bar")
-                resp.push('_');
-                resp.push('v');
-                resp.push('m');
-                resp.push('.');
-                resp.push('_');
-                resp.push('v');
-                resp.push('(');
-                resp.push('"');
+                for c in "_vm._v(\"".chars() {
+                    resp.push(c);
+                }
                 for c in location.chars(p).iter() {
                     match *c {
                         '\\' | '"' => {
@@ -286,7 +280,15 @@ impl Child {
                 resp.push('"');
                 resp.push(')');
             }
-            Self::Var(var, global_refs) => todo!("var"),
+            Self::Var(var, global_refs) => {
+                for c in "_vm._s(".chars() {
+                    resp.push(c);
+                }
+
+                js::add_vm_references(p, resp, var, global_refs);
+
+                resp.push(')');
+            }
         }
     }
 }

@@ -315,6 +315,7 @@ fn parse_name(p: &mut Parser) -> Result<(char, SourceLocation), ParserError> {
 
     loop {
         match p.must_read_one()? {
+            '_' => {}
             c if c.is_numeric() || c.is_ascii_lowercase() || c.is_ascii_uppercase() || c > '}' => {}
             c => {
                 return Ok((c, SourceLocation(start, p.current_char - 1)));

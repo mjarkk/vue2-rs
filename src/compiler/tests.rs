@@ -306,6 +306,24 @@ mod tests {
             );
         }
 
+        #[test]
+        fn vars() {
+            template_to_js_eq(
+                "<h1>{{ 'hello world' }}</h1>",
+                "_c('h1',[_vm._s( 'hello world' )])",
+            );
+
+            template_to_js_eq(
+                "<h1>{{ hello_world }}</h1>",
+                "_c('h1',[_vm._s( _vm.hello_world )])",
+            );
+
+            template_to_js_eq(
+                "<h1>{{ this.hello_world }}</h1>",
+                "_c('h1',[_vm._s( _vm.hello_world )])",
+            );
+        }
+
         // #[test]
         // fn args() {
         //     template_to_js_eq("<h1></h1>", "_c('h1',[_vm._v(\"BOOOO\")])");
