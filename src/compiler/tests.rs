@@ -217,6 +217,16 @@ mod tests {
     }
 
     #[test]
+    fn parse_doc_type() {
+        let result = Parser::new_and_parse(
+            "<!DOCTYPE html>
+            <template>
+            </template>",
+        )
+        .unwrap();
+    }
+
+    #[test]
     fn survive_crappy_template() {
         let cases = vec![
             "<div>",            // only an open tag with no closing tag

@@ -1,4 +1,4 @@
-use super::{js, utils::is_space, Parser, ParserError, SourceLocation, Tag, TagType, Template};
+use super::{js, utils::is_space, Parser, ParserError, SourceLocation, Tag, TagType};
 
 pub fn compile(p: &mut Parser) -> Result<Vec<Child>, ParserError> {
     let mut compile_result = Child::compile_children(p, &mut Vec::new())?;
@@ -134,80 +134,16 @@ impl Child {
                     resp.push(*c);
                 }
                 resp.push('\'');
-                // TODO add args
-                /*
+                if tag.args.len() != 0 {
+                    let is_custom_component = tag.is_custom_component(p);
 
-                https://vuejs.org/v2/guide/render-function.html
-                {
-                  // Same API as `v-bind:class`, accepting either
-                  // a string, object, or array of strings and objects.
-                  class: {
-                    foo: true,
-                    bar: false
-                  },
-                  // Same API as `v-bind:style`, accepting either
-                  // a string, object, or array of objects.
-                  style: {
-                    color: 'red',
-                    fontSize: '14px'
-                  },
-                  // Normal HTML attributes
-                  attrs: {
-                    id: 'foo'
-                  },
-                  // Component props
-                  props: {
-                    myProp: 'bar'
-                  },
-                  // DOM properties
-                  domProps: {
-                    innerHTML: 'baz'
-                  },
-                  // Event handlers are nested under `on`, though
-                  // modifiers such as in `v-on:keyup.enter` are not
-                  // supported. You'll have to manually check the
-                  // keyCode in the handler instead.
-                  on: {
-                    click: this.clickHandler
-                  },
-                  // For components only. Allows you to listen to
-                  // native events, rather than events emitted from
-                  // the component using `vm.$emit`.
-                  nativeOn: {
-                    click: this.nativeClickHandler
-                  },
-                  // Custom directives. Note that the `binding`'s
-                  // `oldValue` cannot be set, as Vue keeps track
-                  // of it for you.
-                  directives: [
-                    {
-                      name: 'my-custom-directive',
-                      value: '2',
-                      expression: '1 + 1',
-                      arg: 'foo',
-                      modifiers: {
-                        bar: true
-                      }
+                    let mut js_tag_args = JsTagArgs::new();
+                    for arg in tag.args.iter() {
+                        arg.insert_into_js_tag_args(&mut js_tag_args, is_custom_component);
                     }
-                  ],
-                  // Scoped slots in the form of
-                  // { name: props => VNode | Array<VNode> }
-                  scopedSlots: {
-                    default: props => createElement('span', props.text)
-                  },
-                  // The name of the slot, if this component is the
-                  // child of another component
-                  slot: 'name-of-slot',
-                  // Other special top-level properties
-                  key: 'myKey',
-                  ref: 'myRef',
-                  // If you are applying the same ref name to multiple
-                  // elements in the render function. This will make `$refs.myRef` become an
-                  // array
-                  refInFor: true
+                    /* TODO convert js_tag_args into a js object */
                 }
 
-                                */
                 resp.push(',');
                 resp.push('[');
                 let children_len = children.len();
@@ -303,4 +239,103 @@ pub fn convert_template_to_js_render_fn(p: &Parser, resp: &mut Vec<char>) {
     }
 
     resp.append(&mut "\n};".chars().collect())
+}
+
+// https://vuejs.org/v2/guide/render-function.html
+// This is a somewhat rust representation of the vue component render arguments
+#[derive(Debug)]
+pub struct JsTagArgs {
+    // Same API as `v-bind:class`, accepting either
+    // a string, object, or array of strings and objects.
+    // {foo: true, bar: false}
+    pub class: Option<SourceLocation>,
+
+    // Same API as `v-bind:style`, accepting either
+    // a string, object, or array of objects.
+    //{ color: 'red', fontSize: '14px'}
+    pub style: Option<SourceLocation>,
+
+    // Normal HTML attributes
+    // { foo: 'bar' }
+    pub static_attrs: Option<Vec<(SourceLocation, Option<SourceLocation>)>>,
+    pub js_attrs: Option<Vec<(SourceLocation, SourceLocation)>>,
+
+    // Component props
+    // { myProp: 'bar' }
+    pub static_props: Option<Vec<(SourceLocation, Option<SourceLocation>)>>,
+    pub js_props: Option<Vec<(SourceLocation, SourceLocation)>>,
+
+    // DOM properties
+    // domProps: { innerHTML: 'baz' }
+    pub dom_props: Option<Vec<(SourceLocation, SourceLocation)>>,
+
+    // Event handlers are nested under `on`, though
+    // modifiers such as in `v-on:keyup.enter` are not
+    // supported. You'll have to manually check the
+    // keyCode in the handler instead.
+    // { click: this.clickHandler }
+    pub on: Option<Vec<(SourceLocation, SourceLocation)>>,
+
+    // For components only. Allows you to listen to
+    // native events, rather than events emitted from
+    // the component using `vm.$emit`.
+    // nativeOn: { click: this.nativeClickHandler }
+    pub native_on: Option<Vec<(SourceLocation, SourceLocation)>>,
+
+    // Custom directives. Note that the `binding`'s
+    // `oldValue` cannot be set, as Vue keeps track
+    // of it for you.
+    pub directives: Option<Vec<JsTagArgsDirective>>,
+
+    // TODO
+    // Scoped slots in the form of
+    // { name: props => VNode | Array<VNode> }
+    // scopedSlots: {
+    //   default: props => createElement('span', props.text)
+    // },
+
+    // The name of the slot, if this component is the
+    // child of another component
+    pub slot: Option<String>, // "name-of-slot"
+
+    // Other special top-level properties
+    // "myKey"
+    pub key: Option<String>,
+    // ref = "myRef"
+    pub ref_: Option<String>,
+
+    // If you are applying the same ref name to multiple
+    // elements in the render function. This will make `$refs.myRef` become an array
+    // refInFor = true
+    pub ref_in_for: Option<bool>,
+}
+
+impl JsTagArgs {
+    fn new() -> Self {
+        Self {
+            class: None,
+            style: None,
+            static_attrs: None,
+            js_attrs: None,
+            static_props: None,
+            js_props: None,
+            dom_props: None,
+            on: None,
+            native_on: None,
+            directives: None,
+            slot: None,
+            key: None,
+            ref_: None,
+            ref_in_for: None,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct JsTagArgsDirective {
+    pub name: String,                   // "my-custom-directive"
+    pub value: String,                  // "2"
+    pub expression: String,             // "1 + 1"
+    pub arg: String,                    // "foo",
+    pub modifiers: Vec<(String, bool)>, // { bar: true }
 }

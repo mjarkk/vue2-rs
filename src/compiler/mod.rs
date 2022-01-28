@@ -538,6 +538,138 @@ impl Tag {
         }
         None
     }
+    fn is_custom_component(&self, parser: &Parser) -> bool {
+        let html_elements = vec![
+            "a".chars(),
+            "abbr".chars(),
+            "acronym".chars(),
+            "address".chars(),
+            "applet".chars(),
+            "area".chars(),
+            "article".chars(),
+            "aside".chars(),
+            "audio".chars(),
+            "b".chars(),
+            "base".chars(),
+            "basefont".chars(),
+            "bdi".chars(),
+            "bdo".chars(),
+            "big".chars(),
+            "blockquote".chars(),
+            "body".chars(),
+            "br".chars(),
+            "button".chars(),
+            "canvas".chars(),
+            "caption".chars(),
+            "center".chars(),
+            "cite".chars(),
+            "code".chars(),
+            "col".chars(),
+            "colgroup".chars(),
+            "data".chars(),
+            "datalist".chars(),
+            "dd".chars(),
+            "del".chars(),
+            "details".chars(),
+            "dfn".chars(),
+            "dialog".chars(),
+            "dir".chars(),
+            "div".chars(),
+            "dl".chars(),
+            "dt".chars(),
+            "em".chars(),
+            "embed".chars(),
+            "fieldset".chars(),
+            "figcaption".chars(),
+            "figure".chars(),
+            "font".chars(),
+            "footer".chars(),
+            "form".chars(),
+            "frame".chars(),
+            "frameset".chars(),
+            "head".chars(),
+            "header".chars(),
+            "hgroup".chars(),
+            "h1".chars(),
+            "h2".chars(),
+            "h3".chars(),
+            "h4".chars(),
+            "h5".chars(),
+            "h6".chars(),
+            "hr".chars(),
+            "html".chars(),
+            "i".chars(),
+            "iframe".chars(),
+            "img".chars(),
+            "input".chars(),
+            "ins".chars(),
+            "kbd".chars(),
+            "keygen".chars(),
+            "label".chars(),
+            "legend".chars(),
+            "li".chars(),
+            "link".chars(),
+            "main".chars(),
+            "map".chars(),
+            "mark".chars(),
+            "menu".chars(),
+            "menuitem".chars(),
+            "meta".chars(),
+            "meter".chars(),
+            "nav".chars(),
+            "noframes".chars(),
+            "noscript".chars(),
+            "object".chars(),
+            "ol".chars(),
+            "optgroup".chars(),
+            "option".chars(),
+            "output".chars(),
+            "p".chars(),
+            "param".chars(),
+            "picture".chars(),
+            "pre".chars(),
+            "progress".chars(),
+            "q".chars(),
+            "rp".chars(),
+            "rt".chars(),
+            "ruby".chars(),
+            "s".chars(),
+            "samp".chars(),
+            "script".chars(),
+            "section".chars(),
+            "select".chars(),
+            "small".chars(),
+            "source".chars(),
+            "span".chars(),
+            "strike".chars(),
+            "strong".chars(),
+            "style".chars(),
+            "sub".chars(),
+            "summary".chars(),
+            "sup".chars(),
+            "svg".chars(),
+            "table".chars(),
+            "tbody".chars(),
+            "td".chars(),
+            "template".chars(),
+            "textarea".chars(),
+            "tfoot".chars(),
+            "th".chars(),
+            "thead".chars(),
+            "time".chars(),
+            "title".chars(),
+            "tr".chars(),
+            "track".chars(),
+            "tt".chars(),
+            "u".chars(),
+            "ul".chars(),
+            "var".chars(),
+            "video".chars(),
+            "wbr".chars(),
+        ];
+
+        self.name.eq_some(parser, false, html_elements).is_none()
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -560,6 +692,59 @@ pub enum TagArg {
 }
 
 impl TagArg {
+    pub fn insert_into_js_tag_args(
+        &self,
+        add_to: &mut template::JsTagArgs,
+        is_custom_component: bool,
+    ) {
+        let todo = |v| todo!("support {}", v);
+
+        match self {
+            Self::Default(key, value) => {
+                let key_value = (key.clone(), value.clone());
+
+                let add_to_list = if is_custom_component {
+                    &mut add_to.static_props
+                } else {
+                    &mut add_to.static_attrs
+                };
+
+                if let Some(list) = add_to_list.as_mut() {
+                    list.push(key_value);
+                } else {
+                    *add_to_list = Some(vec![key_value])
+                }
+            }
+            Self::Bind(key, value) => {
+                let key_value = (key.clone(), value.clone());
+
+                let add_to_list = if is_custom_component {
+                    &mut add_to.js_props
+                } else {
+                    &mut add_to.js_attrs
+                };
+
+                if let Some(list) = add_to_list.as_mut() {
+                    list.push(key_value);
+                } else {
+                    *add_to_list = Some(vec![key_value])
+                }
+            }
+            Self::On(_, _) => todo("v-on"),
+            Self::Text(_) => todo("v-text"),
+            Self::Html(_) => todo("v-html"),
+            Self::Show(_) => todo("v-show"),
+            Self::If(_) => todo("v-if"),
+            Self::Else => todo("v-else"),
+            Self::ElseIf(_) => todo("v-else-if"),
+            Self::For(_) => todo("v-for"),
+            Self::Model(_) => todo("v-model"),
+            Self::Slot(_) => todo("v-slot"),
+            Self::Pre(_) => todo("v-pre"),
+            Self::Cloak(_) => todo("v-cloak"),
+            Self::Once(_) => todo("v-once"),
+        }
+    }
     fn key_eq(&self, parser: &Parser, key: &str) -> bool {
         match self {
             Self::Default(key_location, _) => key_location.eq(parser, key.chars()),
