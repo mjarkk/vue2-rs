@@ -37,7 +37,8 @@ pub fn add_vm_references(
     SourceLocation(current.1, js.1).write_to_vec(p, dest);
 }
 
-pub fn compile_template_var(p: &mut Parser) -> Result<Vec<SourceLocation>, ParserError> {
+// parses {{ foo + ' ' + bar }}
+pub fn parse_template_var(p: &mut Parser) -> Result<Vec<SourceLocation>, ParserError> {
     let mut global_references: Option<Vec<SourceLocation>> = Some(Vec::with_capacity(1));
 
     parse_block_like(p, '}', &mut global_references)?;
@@ -51,6 +52,16 @@ pub fn compile_template_var(p: &mut Parser) -> Result<Vec<SourceLocation>, Parse
     } else {
         Ok(global_references.unwrap())
     }
+}
+
+// parses v-bind:value="some_value"
+pub fn parse_template_arg(
+    p: &mut Parser,
+    closure: char,
+) -> Result<Vec<SourceLocation>, ParserError> {
+    let mut global_references: Option<Vec<SourceLocation>> = Some(Vec::with_capacity(1));
+    parse_block_like(p, closure, &mut global_references)?;
+    Ok(global_references.unwrap())
 }
 
 pub fn compile_script_content(p: &mut Parser) -> Result<Option<SourceLocation>, ParserError> {

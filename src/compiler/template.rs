@@ -104,12 +104,12 @@ pub fn parse_tag(p: &mut Parser) -> Result<Tag, ParserError> {
 }
 
 pub fn compile(p: &mut Parser) -> Result<Vec<Child>, ParserError> {
-    let mut compile_result = Child::compile_children(p, &mut Vec::new())?;
+    let mut compile_result = Child::parse_children(p, &mut Vec::new())?;
     loop {
         if compile_result.1.eq(p, "template".chars()) {
             return Ok(compile_result.0);
         } else {
-            compile_result = Child::compile_children(p, &mut Vec::new())?;
+            compile_result = Child::parse_children(p, &mut Vec::new())?;
         }
     }
 }
@@ -122,7 +122,7 @@ pub enum Child {
 }
 
 impl Child {
-    fn compile_children(
+    fn parse_children(
         p: &mut Parser,
         parents_tag_names: &mut Vec<SourceLocation>,
     ) -> Result<(Vec<Self>, SourceLocation), ParserError> {
@@ -152,7 +152,7 @@ impl Child {
                         TagType::Open => {
                             parents_tag_names.push(tag.name.clone());
                             let compile_children_result =
-                                Self::compile_children(p, parents_tag_names);
+                                Self::parse_children(p, parents_tag_names);
 
                             let tag_name = parents_tag_names.pop().unwrap();
                             let (children, closing_tag_name) = compile_children_result?;
@@ -171,7 +171,7 @@ impl Child {
                     };
                 }
                 CompileAfterTextNode::Var => {
-                    resp.push(Self::compile_var(p)?);
+                    resp.push(Self::parse_var(p)?);
                 }
             }
         }
@@ -215,9 +215,9 @@ impl Child {
         }
     }
 
-    fn compile_var(p: &mut Parser) -> Result<Self, ParserError> {
+    fn parse_var(p: &mut Parser) -> Result<Self, ParserError> {
         let start = p.current_char;
-        let global_vars = js::compile_template_var(p)?;
+        let global_vars = js::parse_template_var(p)?;
         Ok(Self::Var(
             SourceLocation(start, p.current_char - 2),
             global_vars,
@@ -352,12 +352,12 @@ pub struct JsTagArgs {
     // Normal HTML attributes
     // { foo: 'bar' }
     pub static_attrs: Option<Vec<(SourceLocation, Option<SourceLocation>)>>,
-    pub js_attrs: Option<Vec<(SourceLocation, SourceLocation)>>,
+    pub js_attrs: Option<Vec<(SourceLocation, (SourceLocation, Vec<SourceLocation>))>>,
 
     // Component props
     // { myProp: 'bar' }
     pub static_props: Option<Vec<(SourceLocation, Option<SourceLocation>)>>,
-    pub js_props: Option<Vec<(SourceLocation, SourceLocation)>>,
+    pub js_props: Option<Vec<(SourceLocation, (SourceLocation, Vec<SourceLocation>))>>,
 
     // DOM properties
     // domProps: { innerHTML: 'baz' }
@@ -368,7 +368,7 @@ pub struct JsTagArgs {
     // supported. You'll have to manually check the
     // keyCode in the handler instead.
     // { click: this.clickHandler }
-    pub on: Option<Vec<(SourceLocation, SourceLocation)>>,
+    pub on: Option<Vec<(SourceLocation, (SourceLocation, Vec<SourceLocation>))>>,
 
     // For components only. Allows you to listen to
     // native events, rather than events emitted from
@@ -454,7 +454,17 @@ impl JsTagArgs {
                 }
             }
 
-            // TODO: js_attrs // Option<Vec<(SourceLocation, SourceLocation)>>,
+            if let Some(attrs) = self.js_attrs.as_ref() {
+                for (key, value) in attrs {
+                    attrs_entries.add(dest);
+
+                    dest.push('"');
+                    key.write_to_vec_escape(p, dest, '"', '\\');
+                    write_str("\":", dest);
+
+                    js::add_vm_references(p, dest, &value.0, &value.1);
+                }
+            }
 
             dest.push('}');
         }
@@ -482,13 +492,43 @@ impl JsTagArgs {
                 }
             }
 
-            // TODO: js_props // Option<Vec<(SourceLocation, SourceLocation)>>,
+            if let Some(attrs) = self.js_props.as_ref() {
+                for (key, value) in attrs {
+                    props_entries.add(dest);
+
+                    dest.push('"');
+                    key.write_to_vec_escape(p, dest, '"', '\\');
+                    write_str("\":", dest);
+
+                    js::add_vm_references(p, dest, &value.0, &value.1);
+                }
+            }
 
             dest.push('}');
         }
 
         // TODO: dom_props // Option<Vec<(SourceLocation, SourceLocation)>>,
-        // TODO: on // Option<Vec<(SourceLocation, SourceLocation)>>,
+
+        if let Some(on) = self.on.as_ref() {
+            object_entries.add(dest);
+            write_str("on:{", dest);
+            let mut on_entries = CommaSeperatedEntries::new();
+
+            for (key, value) in on {
+                on_entries.add(dest);
+
+                dest.push('"');
+                key.write_to_vec_escape(p, dest, '"', '\\');
+                write_str("\":$event=>{", dest);
+
+                js::add_vm_references(p, dest, &value.0, &value.1);
+
+                dest.push('}');
+            }
+
+            dest.push('}');
+        }
+
         // TODO: native_on // Option<Vec<(SourceLocation, SourceLocation)>>,
         // TODO: directives // Option<Vec<JsTagArgsDirective>>,
         // TODO: slot // Option<String>, // "name-of-slot"

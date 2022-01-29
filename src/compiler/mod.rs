@@ -231,9 +231,7 @@ impl Parser {
             None => self.must_read_one()?,
         };
         match c {
-            'a'..='z' | 'A'..='Z' | '0'..='9' | '_' => {
-                // do nothing
-            }
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '_' => {} // do nothing
             _ => return Err(ParserError::new("parse_name", no_name_err)),
         }
 
@@ -248,12 +246,23 @@ impl Parser {
     // Try_parse_arg parses a key="value" , :key="value" , v-bind:key="value" , v-on:key="value" and @key="value"
     // It returns Ok(None) if first_char is not a char expected as first character of a argument
     fn try_parse_arg(&mut self, mut c: char) -> Result<Option<(TagArg, char)>, ParserError> {
-        match c {
-            'a'..='z' | 'A'..='Z' | '0'..='9' | '@' | ':' | '_' => {}
-            _ => return Ok(None),
-        };
+        let mut is_v_on_shotcut = false;
+        let mut is_v_bind_shotcut = false;
 
         let mut key_location = SourceLocation(self.current_char - 1, 0);
+
+        match c {
+            '@' => {
+                is_v_on_shotcut = true;
+                key_location.0 += 1;
+            }
+            ':' => {
+                is_v_bind_shotcut = true;
+                key_location.0 += 1;
+            }
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '_' => {}
+            _ => return Ok(None),
+        };
 
         let mut has_value = false;
         loop {
@@ -277,53 +286,78 @@ impl Parser {
             }
         }
         key_location.1 = self.current_char - 1;
+        let is_vue_dash_arg = key_location.starts_with(self, "v-".chars());
+        let is_vue_arg = is_vue_dash_arg || is_v_on_shotcut || is_v_bind_shotcut;
 
-        let value_location = if has_value {
-            // Parse the argument
-            Some(match self.must_read_one()? {
-                '"' => {
-                    let start = self.current_char;
-                    self.parse_quotes(QuoteKind::HTMLDouble, &mut None)?;
-                    let sl = SourceLocation(start, self.current_char - 1);
-                    c = self.must_read_one()?;
-                    sl
-                }
-                '\'' => {
-                    let start = self.current_char;
-                    self.parse_quotes(QuoteKind::HTMLSingle, &mut None)?;
-                    let sl = SourceLocation(start, self.current_char - 1);
-                    c = self.must_read_one()?;
-                    sl
-                }
-                _ => {
-                    let start = self.current_char - 1;
-                    loop {
-                        c = self.must_read_one()?;
-                        match c {
-                            '>' | '/' => {
-                                break;
-                            }
-                            c if is_space(c) => {
-                                break;
-                            }
-                            _ => {}
-                        }
+        if is_vue_arg {
+            let value_location: Option<(SourceLocation, Vec<SourceLocation>)> = if has_value {
+                let closure = self.must_read_one()?;
+                match closure {
+                    '"' | '\'' => {} // Ok
+                    c => {
+                        return Err(ParserError::new(
+                            "try_parse_arg",
+                            format!(
+                                "expected opening of argument value ('\"' or \"'\") but got '{}'",
+                                c.to_string()
+                            ),
+                        ))
                     }
-                    SourceLocation(start, self.current_char - 1)
                 }
-            })
-        } else {
-            None
-        };
+                let start = self.current_char;
+                let replacements = js::parse_template_arg(self, closure)?;
+                let sl = SourceLocation(start, self.current_char - 1);
+                c = self.must_read_one()?;
+                Some((sl, replacements))
+            } else {
+                None
+            };
 
-        if key_location.starts_with(self, "v-".chars()) {
+            if is_v_on_shotcut {
+                if is_vue_dash_arg {
+                    return Err(ParserError::new(
+                        "try_parse_arg",
+                        "cannot use @v-.. as arg name",
+                    ));
+                }
+                return if let Some(value_location) = value_location {
+                    Ok(Some((TagArg::On(key_location, value_location), c)))
+                } else {
+                    Err(ParserError::new(
+                        "try_parse_arg",
+                        format!(
+                            "expected an argument value for \"@{}\"",
+                            key_location.string(self)
+                        ),
+                    ))
+                };
+            } else if is_v_bind_shotcut {
+                if is_vue_dash_arg {
+                    return Err(ParserError::new(
+                        "try_parse_arg",
+                        "cannot use :v-.. as arg name",
+                    ));
+                }
+                return if let Some(value_location) = value_location {
+                    Ok(Some((TagArg::On(key_location, value_location), c)))
+                } else {
+                    Err(ParserError::new(
+                        "try_parse_arg",
+                        format!(
+                            "expected an argument value for \":{}\"",
+                            key_location.string(self)
+                        ),
+                    ))
+                };
+            }
+
             // parse vue spesific tag
             key_location.0 += 2;
 
             let vue_directives: &[(
                 &'static str,
                 bool,
-                fn(k: SourceLocation, v: SourceLocation) -> TagArg,
+                fn(k: SourceLocation, v: (SourceLocation, Vec<SourceLocation>)) -> TagArg,
             )] = &[
                 ("if", true, |_, v| TagArg::If(v)),
                 ("for", true, |_, v| TagArg::For(v)),
@@ -366,7 +400,7 @@ impl Parser {
 
                     let tag = make_result_tag(
                         key_location,
-                        value_location.unwrap_or(SourceLocation::empty()),
+                        value_location.unwrap_or((SourceLocation::empty(), Vec::new())),
                     );
                     Ok(Some((tag, c)))
                 }
@@ -378,6 +412,44 @@ impl Parser {
                 ))
             }
         } else {
+            let value_location: Option<SourceLocation> = if has_value {
+                // Parse a static argument
+                Some(match self.must_read_one()? {
+                    '"' => {
+                        let start = self.current_char;
+                        self.parse_quotes(QuoteKind::HTMLDouble, &mut None)?;
+                        let sl = SourceLocation(start, self.current_char - 1);
+                        c = self.must_read_one()?;
+                        sl
+                    }
+                    '\'' => {
+                        let start = self.current_char;
+                        self.parse_quotes(QuoteKind::HTMLSingle, &mut None)?;
+                        let sl = SourceLocation(start, self.current_char - 1);
+                        c = self.must_read_one()?;
+                        sl
+                    }
+                    _ => {
+                        let start = self.current_char - 1;
+                        loop {
+                            c = self.must_read_one()?;
+                            match c {
+                                '>' | '/' => {
+                                    break;
+                                }
+                                c if is_space(c) => {
+                                    break;
+                                }
+                                _ => {}
+                            }
+                        }
+                        SourceLocation(start, self.current_char - 1)
+                    }
+                })
+            } else {
+                None
+            };
+
             Ok(Some((TagArg::Default(key_location, value_location), c)))
         }
     }
@@ -580,20 +652,20 @@ impl Tag {
 #[derive(Debug, Clone)]
 pub enum TagArg {
     Default(SourceLocation, Option<SourceLocation>), // value="val"
-    Bind(SourceLocation, SourceLocation),            // :value="val" and v-bind:value="val"
-    On(SourceLocation, SourceLocation),              // @click and v-on:click="val"
-    Text(SourceLocation),                            // v-text=""
-    Html(SourceLocation),                            // v-html=""
-    Show(SourceLocation),                            // v-show=""
-    If(SourceLocation),                              // v-if=""
-    Else,                                            // v-else
-    ElseIf(SourceLocation),                          // v-else-if
-    For(SourceLocation),                             // v-for=""
-    Model(SourceLocation),                           // v-model=""
-    Slot(SourceLocation),                            // v-slot=""
-    Pre(SourceLocation),                             // v-pre=""
-    Cloak(SourceLocation),                           // v-cloak=""
-    Once,                                            // v-once
+    Bind(SourceLocation, (SourceLocation, Vec<SourceLocation>)), // :value="val" and v-bind:value="val"
+    On(SourceLocation, (SourceLocation, Vec<SourceLocation>)),   // @click and v-on:click="val"
+    Text((SourceLocation, Vec<SourceLocation>)),                 // v-text=""
+    Html((SourceLocation, Vec<SourceLocation>)),                 // v-html=""
+    Show((SourceLocation, Vec<SourceLocation>)),                 // v-show=""
+    If((SourceLocation, Vec<SourceLocation>)),                   // v-if=""
+    Else,                                                        // v-else
+    ElseIf((SourceLocation, Vec<SourceLocation>)),               // v-else-if
+    For((SourceLocation, Vec<SourceLocation>)),                  // v-for=""
+    Model((SourceLocation, Vec<SourceLocation>)),                // v-model=""
+    Slot((SourceLocation, Vec<SourceLocation>)),                 // v-slot=""
+    Pre((SourceLocation, Vec<SourceLocation>)),                  // v-pre=""
+    Cloak((SourceLocation, Vec<SourceLocation>)),                // v-cloak=""
+    Once,                                                        // v-once
 }
 
 impl TagArg {
@@ -707,7 +779,7 @@ impl TagArg {
             | Self::Model(v)
             | Self::Slot(v)
             | Self::Pre(v)
-            | Self::Cloak(v) => v.clone(),
+            | Self::Cloak(v) => v.0.clone(),
             Self::Once => SourceLocation::empty(),
             Self::Else => SourceLocation::empty(),
         }

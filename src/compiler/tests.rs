@@ -342,7 +342,7 @@ mod tests {
 
         fn parse_js(js: &str, expected_global_vars: Vec<&str>, expected_result: &str) {
             let mut parser = Parser::new(&format!("{}{}", js, "}}"));
-            let global_var_locations = js::compile_template_var(&mut parser).unwrap();
+            let global_var_locations = js::parse_template_var(&mut parser).unwrap();
 
             let mut global_var_locations_iter =
                 global_var_locations.iter().map(|e| e.string(&parser));
