@@ -1,4 +1,5 @@
-use super::{js, utils::is_space, Parser, ParserError, SourceLocation, Tag, TagType};
+use super::utils::{is_space, write_str};
+use super::{js, Parser, ParserError, SourceLocation, Tag, TagType};
 
 // parse_tag is expected to be next to the open indicator (<) at the first character of the tag name
 // TODO support upper case tag names
@@ -229,12 +230,8 @@ impl Child {
             Self::Tag(tag, children) => {
                 // Writes:
                 // _c('div', [_c(..), _c(..)])
-                for c in "_c('".chars() {
-                    resp.push(c);
-                }
-                for c in tag.name.chars(p).iter() {
-                    resp.push(*c);
-                }
+                write_str("_c('", resp);
+                tag.name.chars_write_to_vec(p, resp);
                 resp.push('\'');
                 if tag.args.len() != 0 {
                     let is_custom_component = tag.is_custom_component(p);
@@ -243,11 +240,12 @@ impl Child {
                     for arg in tag.args.iter() {
                         arg.insert_into_js_tag_args(&mut js_tag_args, is_custom_component);
                     }
-                    /* TODO convert js_tag_args into a js object */
+
+                    resp.push(',');
+                    js_tag_args.to_js(p, resp);
                 }
 
-                resp.push(',');
-                resp.push('[');
+                write_str(",[", resp);
                 let children_len = children.len();
                 if children_len != 0 {
                     let children_max_idx = children_len - 1;
@@ -258,15 +256,12 @@ impl Child {
                         }
                     }
                 }
-                resp.push(']');
-                resp.push(')');
+                write_str("])", resp);
             }
             Self::Text(location) => {
                 // Writes:
                 // _vm._v("foo bar")
-                for c in "_vm._v(\"".chars() {
-                    resp.push(c);
-                }
+                write_str("_vm._v(\"", resp);
                 for c in location.chars(p).iter() {
                     match *c {
                         '\\' | '"' => {
@@ -277,16 +272,11 @@ impl Child {
                         c => resp.push(c),
                     }
                 }
-                resp.push('"');
-                resp.push(')');
+                write_str("\")", resp);
             }
             Self::Var(var, global_refs) => {
-                for c in "_vm._s(".chars() {
-                    resp.push(c);
-                }
-
+                write_str("_vm._s(", resp);
                 js::add_vm_references(p, resp, var, global_refs);
-
                 resp.push(')');
             }
         }
@@ -325,8 +315,7 @@ pub fn convert_template_to_js_render_fn(p: &Parser, resp: &mut Vec<char>) {
 
     match template.content.len() {
         0 => {
-            resp.push('[');
-            resp.push(']');
+            write_str("[]", resp);
         }
         1 => {
             template.content.get(0).unwrap().to_js(p, resp);
@@ -432,6 +421,95 @@ impl JsTagArgs {
             key: None,
             ref_: None,
             ref_in_for: None,
+        }
+    }
+
+    fn to_js(&self, p: &Parser, dest: &mut Vec<char>) {
+        dest.push('{');
+        let mut object_entries = CommaSeperatedEntries::new();
+
+        // TODO: class // Option<SourceLocation>,
+        // TODO: style // Option<SourceLocation>,
+
+        if self.static_attrs.is_some() || self.js_attrs.is_some() {
+            object_entries.add(dest);
+            write_str("attrs:{", dest);
+            let mut attrs_entries = CommaSeperatedEntries::new();
+
+            if let Some(attrs) = self.static_attrs.as_ref() {
+                for (key, value) in attrs {
+                    attrs_entries.add(dest);
+
+                    dest.push('"');
+                    key.chars_write_to_vec(p, dest);
+                    write_str("\":", dest);
+
+                    if let Some(value) = value {
+                        dest.push('"');
+                        value.chars_write_to_vec(p, dest);
+                        dest.push('"');
+                    } else {
+                        write_str("true", dest);
+                    }
+                }
+            }
+
+            // TODO: js_attrs // Option<Vec<(SourceLocation, SourceLocation)>>,
+
+            dest.push('}');
+        }
+
+        if self.static_props.is_some() || self.js_props.is_some() {
+            object_entries.add(dest);
+            write_str("props:{", dest);
+            let mut props_entries = CommaSeperatedEntries::new();
+
+            if let Some(props) = self.static_props.as_ref() {
+                for (key, value) in props {
+                    props_entries.add(dest);
+
+                    dest.push('"');
+                    key.chars_write_to_vec(p, dest);
+                    write_str("\":", dest);
+
+                    if let Some(value) = value {
+                        dest.push('"');
+                        value.chars_write_to_vec(p, dest);
+                        dest.push('"');
+                    } else {
+                        write_str("true", dest);
+                    }
+                }
+            }
+
+            // TODO: js_props // Option<Vec<(SourceLocation, SourceLocation)>>,
+
+            dest.push('}');
+        }
+
+        // TODO: dom_props // Option<Vec<(SourceLocation, SourceLocation)>>,
+        // TODO: on // Option<Vec<(SourceLocation, SourceLocation)>>,
+        // TODO: native_on // Option<Vec<(SourceLocation, SourceLocation)>>,
+        // TODO: directives // Option<Vec<JsTagArgsDirective>>,
+        // TODO: slot // Option<String>, // "name-of-slot"
+        // TODO: key // Option<String>,
+        // TODO: ref_ // Option<String>,
+        // TODO: ref_in_for // Option<bool>,
+        dest.push('}');
+    }
+}
+
+struct CommaSeperatedEntries(bool);
+
+impl CommaSeperatedEntries {
+    fn new() -> Self {
+        Self(false)
+    }
+    fn add(&mut self, dest: &mut Vec<char>) {
+        if self.0 {
+            dest.push(',');
+        } else {
+            self.0 = true;
         }
     }
 }

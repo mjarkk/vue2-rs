@@ -4,3 +4,9 @@ pub fn is_space(c: char) -> bool {
         _ => false,
     }
 }
+
+pub fn write_str(input: &str, dest: &mut Vec<char>) {
+    for c in input.chars() {
+        dest.push(c);
+    }
+}

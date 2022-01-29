@@ -324,10 +324,17 @@ mod tests {
             );
         }
 
-        // #[test]
-        // fn args() {
-        //     template_to_js_eq("<h1></h1>", "_c('h1',[_vm._v(\"BOOOO\")])");
-        // }
+        mod args {
+            use super::*;
+
+            #[test]
+            fn default_args() {
+                template_to_js_eq(
+                    "<h1 a=b c='d' e>Hmm</h1>",
+                    "_c('h1',{attrs:{\"a\":\"b\",\"c\":\"d\",\"e\":true}},[_vm._v(\"Hmm\")])",
+                );
+            }
+        }
     }
 
     mod js_tests {
