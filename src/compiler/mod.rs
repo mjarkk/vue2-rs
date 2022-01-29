@@ -152,7 +152,7 @@ impl Parser {
                             let style_start = self.current_char;
                             let SourceLocation(style_end, _) = self.look_for("</style>".chars().collect())?;
 
-                            let scoped =  top_level_tag.1.arg(self, "scoped").is_some();
+                            let scoped = top_level_tag.1.arg(self, "scoped").is_some();
 
                             self.styles.push(Style{
                                 lang,
@@ -191,7 +191,7 @@ impl Parser {
         }
     }
 
-    fn parse_top_level_tag(&mut self) -> Result<(TopLevelTag, Tag), ParserError> {
+    fn parse_top_level_tag(&mut self) -> Result<(TopLevelTag, template::Tag), ParserError> {
         let parsed_tag = template::parse_tag(self)?;
         if let TagType::DocType = parsed_tag.type_ {
             return Ok((TopLevelTag::DocType, parsed_tag));

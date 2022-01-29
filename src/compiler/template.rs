@@ -776,13 +776,13 @@ pub struct JsTagArgsDirective {
 
 #[derive(Debug, Clone)]
 pub struct Tag {
-    type_: TagType,
-    name: SourceLocation,
-    args: Vec<TagArg>,
+    pub type_: TagType,
+    pub name: SourceLocation,
+    pub args: Vec<TagArg>,
 }
 
 impl Tag {
-    fn arg(&self, parser: &Parser, key: &str) -> Option<&TagArg> {
+    pub fn arg(&self, parser: &Parser, key: &str) -> Option<&TagArg> {
         for arg in self.args.iter() {
             if arg.key_eq(parser, key) {
                 return Some(arg);
@@ -790,7 +790,7 @@ impl Tag {
         }
         None
     }
-    fn is_custom_component(&self, parser: &Parser) -> bool {
+    pub fn is_custom_component(&self, parser: &Parser) -> bool {
         let html_elements = vec![
             "a".chars(),
             "abbr".chars(),
@@ -1001,7 +1001,7 @@ impl TagArg {
             Self::Once => todo("v-once"),
         }
     }
-    fn key_eq(&self, parser: &Parser, key: &str) -> bool {
+    pub fn key_eq(&self, parser: &Parser, key: &str) -> bool {
         match self {
             Self::Default(key_location, _) => key_location.eq(parser, key.chars()),
             Self::Bind(key_location, _) => {
@@ -1036,7 +1036,7 @@ impl TagArg {
             Self::Once => key == "v-once",
         }
     }
-    fn value(&self) -> SourceLocation {
+    pub fn value(&self) -> SourceLocation {
         match self {
             Self::Default(_, v) => v.clone().unwrap_or(SourceLocation::empty()),
             Self::On(_, v)
