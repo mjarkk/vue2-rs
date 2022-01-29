@@ -334,6 +334,19 @@ mod tests {
                     "_c('h1',{attrs:{\"a\":\"b\",\"c\":\"d\",\"e\":true}},[_vm._v(\"Hmm\")])",
                 );
             }
+
+            #[test]
+            fn bind_arg() {
+                template_to_js_eq(
+                    "<h1 v-bind:value='value'>Hmm</h1>",
+                    "_c('h1',{attrs:{\"value\":_vm.value}},[_vm._v(\"Hmm\")])",
+                );
+
+                template_to_js_eq(
+                    "<custom-component v-bind:value='value'>Hmm</custom-component>",
+                    "_c('custom-component',{props:{\"value\":_vm.value}},[_vm._v(\"Hmm\")])",
+                );
+            }
         }
     }
 

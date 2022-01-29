@@ -49,7 +49,7 @@ pub fn parse_tag(p: &mut Parser) -> Result<Tag, ParserError> {
     // Parse names
     loop {
         match p.must_read_one()? {
-            'a'..='z' | 'A'..='Z' | '0'..='9' => {}
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' => {}
             _ => {
                 p.current_char -= 1;
                 tag.name.1 = p.current_char;
