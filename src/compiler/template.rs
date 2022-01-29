@@ -1,5 +1,5 @@
 use super::utils::{is_space, write_str};
-use super::{js, Parser, ParserError, SourceLocation, Tag, TagType};
+use super::{js, Parser, ParserError, QuoteKind, SourceLocation, TagType};
 
 // parse_tag is expected to be next to the open indicator (<) at the first character of the tag name
 // TODO support upper case tag names
@@ -65,7 +65,7 @@ pub fn parse_tag(p: &mut Parser) -> Result<Tag, ParserError> {
     // Parse args
     loop {
         c = p.must_read_one_skip_spacing()?;
-        c = match p.try_parse_arg(c)? {
+        c = match try_parse_arg(p, c)? {
             Some((arg, next_char)) => {
                 tag.args.push(arg);
                 next_char
@@ -100,6 +100,217 @@ pub fn parse_tag(p: &mut Parser) -> Result<Tag, ParserError> {
                 ))
             }
         }
+    }
+}
+
+// Try_parse_arg parses a key="value" , :key="value" , v-bind:key="value" , v-on:key="value" and @key="value"
+// It returns Ok(None) if first_char is not a char expected as first character of a argument
+fn try_parse_arg(p: &mut Parser, mut c: char) -> Result<Option<(TagArg, char)>, ParserError> {
+    let mut is_v_on_shotcut = false;
+    let mut is_v_bind_shotcut = false;
+
+    let mut key_location = SourceLocation(p.current_char - 1, 0);
+
+    match c {
+        '@' => {
+            is_v_on_shotcut = true;
+            key_location.0 += 1;
+        }
+        ':' => {
+            is_v_bind_shotcut = true;
+            key_location.0 += 1;
+        }
+        'a'..='z' | 'A'..='Z' | '0'..='9' | '_' => {}
+        _ => return Ok(None),
+    };
+
+    let mut has_value = false;
+    loop {
+        c = p.must_read_one()?;
+        match c {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' | ':' => {}
+            '=' => {
+                let c = p.must_seek_one()?;
+                has_value = !is_space(c) && c != '/' && c != '>';
+                break;
+            }
+            c if is_space(c) || c == '/' || c == '>' => {
+                break;
+            }
+            c => {
+                return Err(ParserError::new(
+                    "try_parse_arg",
+                    format!("unexpected argument character '{}'", c.to_string()),
+                ))
+            }
+        }
+    }
+    key_location.1 = p.current_char - 1;
+    let is_vue_dash_arg = key_location.starts_with(p, "v-".chars());
+    let is_vue_arg = is_vue_dash_arg || is_v_on_shotcut || is_v_bind_shotcut;
+
+    if is_vue_arg {
+        let value_location: Option<(SourceLocation, Vec<SourceLocation>)> = if has_value {
+            let closure = p.must_read_one()?;
+            match closure {
+                '"' | '\'' => {} // Ok
+                c => {
+                    return Err(ParserError::new(
+                        "try_parse_arg",
+                        format!(
+                            "expected opening of argument value ('\"' or \"'\") but got '{}'",
+                            c.to_string()
+                        ),
+                    ))
+                }
+            }
+            let start = p.current_char;
+            let replacements = js::parse_template_arg(p, closure)?;
+            let sl = SourceLocation(start, p.current_char - 1);
+            c = p.must_read_one()?;
+            Some((sl, replacements))
+        } else {
+            None
+        };
+
+        if is_v_on_shotcut {
+            if is_vue_dash_arg {
+                return Err(ParserError::new(
+                    "try_parse_arg",
+                    "cannot use @v-.. as arg name",
+                ));
+            }
+            return if let Some(value_location) = value_location {
+                Ok(Some((TagArg::On(key_location, value_location), c)))
+            } else {
+                Err(ParserError::new(
+                    "try_parse_arg",
+                    format!(
+                        "expected an argument value for \"@{}\"",
+                        key_location.string(p)
+                    ),
+                ))
+            };
+        } else if is_v_bind_shotcut {
+            if is_vue_dash_arg {
+                return Err(ParserError::new(
+                    "try_parse_arg",
+                    "cannot use :v-.. as arg name",
+                ));
+            }
+            return if let Some(value_location) = value_location {
+                Ok(Some((TagArg::Bind(key_location, value_location), c)))
+            } else {
+                Err(ParserError::new(
+                    "try_parse_arg",
+                    format!(
+                        "expected an argument value for \":{}\"",
+                        key_location.string(p)
+                    ),
+                ))
+            };
+        }
+
+        // parse vue spesific tag
+        key_location.0 += 2;
+
+        let vue_directives: &[(
+            &'static str,
+            bool,
+            fn(k: SourceLocation, v: (SourceLocation, Vec<SourceLocation>)) -> TagArg,
+        )] = &[
+            ("if", true, |_, v| TagArg::If(v)),
+            ("for", true, |_, v| TagArg::For(v)),
+            ("pre", true, |_, v| TagArg::Pre(v)),
+            ("else", false, |_, _| TagArg::Else),
+            ("slot", true, |_, v| TagArg::Slot(v)),
+            ("text", true, |_, v| TagArg::Text(v)),
+            ("html", true, |_, v| TagArg::Html(v)),
+            ("show", true, |_, v| TagArg::Show(v)),
+            ("once", false, |_, _| TagArg::Once),
+            ("model", true, |_, v| TagArg::Model(v)),
+            ("cloak", true, |_, v| TagArg::Cloak(v)),
+            ("else-if", true, |_, v| TagArg::ElseIf(v)),
+            ("bind", true, |k, v| TagArg::Bind(k, v)),
+            ("on", true, |k, v| TagArg::On(k, v)),
+        ];
+
+        let mut vue_directives_match_input = Vec::with_capacity(vue_directives.len());
+        for e in vue_directives.iter() {
+            vue_directives_match_input.push(e.0.chars());
+        }
+
+        if let Some(idx) = key_location.eq_some(p, true, vue_directives_match_input) {
+            let (key, expects_argument, make_result_tag) = vue_directives[idx];
+
+            if has_value != expects_argument {
+                Err(ParserError::new(
+                    "try_parse_arg",
+                    if expects_argument {
+                        format!("expected an argument value for \"v-{}\"", key)
+                    } else {
+                        format!("expected no argument value for \"v-{}\"", key)
+                    },
+                ))
+            } else {
+                key_location.0 += key.len();
+                if p.source_chars[key_location.0] == ':' {
+                    key_location.0 += 1;
+                }
+
+                let tag = make_result_tag(
+                    key_location,
+                    value_location.unwrap_or((SourceLocation::empty(), Vec::new())),
+                );
+                Ok(Some((tag, c)))
+            }
+        } else {
+            key_location.0 -= 2;
+            Err(ParserError::new(
+                "try_parse_arg",
+                format!("unknown vue argument \"{}\"", key_location.string(p)),
+            ))
+        }
+    } else {
+        let value_location: Option<SourceLocation> = if has_value {
+            // Parse a static argument
+            Some(match p.must_read_one()? {
+                '"' => {
+                    let start = p.current_char;
+                    p.parse_quotes(QuoteKind::HTMLDouble, &mut None)?;
+                    let sl = SourceLocation(start, p.current_char - 1);
+                    c = p.must_read_one()?;
+                    sl
+                }
+                '\'' => {
+                    let start = p.current_char;
+                    p.parse_quotes(QuoteKind::HTMLSingle, &mut None)?;
+                    let sl = SourceLocation(start, p.current_char - 1);
+                    c = p.must_read_one()?;
+                    sl
+                }
+                _ => {
+                    let start = p.current_char - 1;
+                    loop {
+                        c = p.must_read_one()?;
+                        match c {
+                            '>' | '/' => {
+                                break;
+                            }
+                            c if is_space(c) => {
+                                break;
+                            }
+                            _ => {}
+                        }
+                    }
+                    SourceLocation(start, p.current_char - 1)
+                }
+            })
+        } else {
+            None
+        };
+
+        Ok(Some((TagArg::Default(key_location, value_location), c)))
     }
 }
 
@@ -561,4 +772,287 @@ pub struct JsTagArgsDirective {
     pub expression: String,             // "1 + 1"
     pub arg: String,                    // "foo",
     pub modifiers: Vec<(String, bool)>, // { bar: true }
+}
+
+#[derive(Debug, Clone)]
+pub struct Tag {
+    type_: TagType,
+    name: SourceLocation,
+    args: Vec<TagArg>,
+}
+
+impl Tag {
+    fn arg(&self, parser: &Parser, key: &str) -> Option<&TagArg> {
+        for arg in self.args.iter() {
+            if arg.key_eq(parser, key) {
+                return Some(arg);
+            }
+        }
+        None
+    }
+    fn is_custom_component(&self, parser: &Parser) -> bool {
+        let html_elements = vec![
+            "a".chars(),
+            "abbr".chars(),
+            "acronym".chars(),
+            "address".chars(),
+            "applet".chars(),
+            "area".chars(),
+            "article".chars(),
+            "aside".chars(),
+            "audio".chars(),
+            "b".chars(),
+            "base".chars(),
+            "basefont".chars(),
+            "bdi".chars(),
+            "bdo".chars(),
+            "big".chars(),
+            "blockquote".chars(),
+            "body".chars(),
+            "br".chars(),
+            "button".chars(),
+            "canvas".chars(),
+            "caption".chars(),
+            "center".chars(),
+            "cite".chars(),
+            "code".chars(),
+            "col".chars(),
+            "colgroup".chars(),
+            "data".chars(),
+            "datalist".chars(),
+            "dd".chars(),
+            "del".chars(),
+            "details".chars(),
+            "dfn".chars(),
+            "dialog".chars(),
+            "dir".chars(),
+            "div".chars(),
+            "dl".chars(),
+            "dt".chars(),
+            "em".chars(),
+            "embed".chars(),
+            "fieldset".chars(),
+            "figcaption".chars(),
+            "figure".chars(),
+            "font".chars(),
+            "footer".chars(),
+            "form".chars(),
+            "frame".chars(),
+            "frameset".chars(),
+            "head".chars(),
+            "header".chars(),
+            "hgroup".chars(),
+            "h1".chars(),
+            "h2".chars(),
+            "h3".chars(),
+            "h4".chars(),
+            "h5".chars(),
+            "h6".chars(),
+            "hr".chars(),
+            "html".chars(),
+            "i".chars(),
+            "iframe".chars(),
+            "img".chars(),
+            "input".chars(),
+            "ins".chars(),
+            "kbd".chars(),
+            "keygen".chars(),
+            "label".chars(),
+            "legend".chars(),
+            "li".chars(),
+            "link".chars(),
+            "main".chars(),
+            "map".chars(),
+            "mark".chars(),
+            "menu".chars(),
+            "menuitem".chars(),
+            "meta".chars(),
+            "meter".chars(),
+            "nav".chars(),
+            "noframes".chars(),
+            "noscript".chars(),
+            "object".chars(),
+            "ol".chars(),
+            "optgroup".chars(),
+            "option".chars(),
+            "output".chars(),
+            "p".chars(),
+            "param".chars(),
+            "picture".chars(),
+            "pre".chars(),
+            "progress".chars(),
+            "q".chars(),
+            "rp".chars(),
+            "rt".chars(),
+            "ruby".chars(),
+            "s".chars(),
+            "samp".chars(),
+            "script".chars(),
+            "section".chars(),
+            "select".chars(),
+            "small".chars(),
+            "source".chars(),
+            "span".chars(),
+            "strike".chars(),
+            "strong".chars(),
+            "style".chars(),
+            "sub".chars(),
+            "summary".chars(),
+            "sup".chars(),
+            "svg".chars(),
+            "table".chars(),
+            "tbody".chars(),
+            "td".chars(),
+            "template".chars(),
+            "textarea".chars(),
+            "tfoot".chars(),
+            "th".chars(),
+            "thead".chars(),
+            "time".chars(),
+            "title".chars(),
+            "tr".chars(),
+            "track".chars(),
+            "tt".chars(),
+            "u".chars(),
+            "ul".chars(),
+            "var".chars(),
+            "video".chars(),
+            "wbr".chars(),
+        ];
+
+        self.name.eq_some(parser, false, html_elements).is_none()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum TagArg {
+    Default(SourceLocation, Option<SourceLocation>), // value="val"
+    Bind(SourceLocation, (SourceLocation, Vec<SourceLocation>)), // :value="val" and v-bind:value="val"
+    On(SourceLocation, (SourceLocation, Vec<SourceLocation>)),   // @click and v-on:click="val"
+    Text((SourceLocation, Vec<SourceLocation>)),                 // v-text=""
+    Html((SourceLocation, Vec<SourceLocation>)),                 // v-html=""
+    Show((SourceLocation, Vec<SourceLocation>)),                 // v-show=""
+    If((SourceLocation, Vec<SourceLocation>)),                   // v-if=""
+    Else,                                                        // v-else
+    ElseIf((SourceLocation, Vec<SourceLocation>)),               // v-else-if
+    For((SourceLocation, Vec<SourceLocation>)),                  // v-for=""
+    Model((SourceLocation, Vec<SourceLocation>)),                // v-model=""
+    Slot((SourceLocation, Vec<SourceLocation>)),                 // v-slot=""
+    Pre((SourceLocation, Vec<SourceLocation>)),                  // v-pre=""
+    Cloak((SourceLocation, Vec<SourceLocation>)),                // v-cloak=""
+    Once,                                                        // v-once
+}
+
+impl TagArg {
+    pub fn insert_into_js_tag_args(&self, add_to: &mut JsTagArgs, is_custom_component: bool) {
+        let todo = |v| todo!("support {}", v);
+
+        match self {
+            Self::Default(key, value) => {
+                let kv = (key.clone(), value.clone());
+
+                let add_to_list = if is_custom_component {
+                    &mut add_to.static_props
+                } else {
+                    &mut add_to.static_attrs
+                };
+
+                if let Some(list) = add_to_list.as_mut() {
+                    list.push(kv);
+                } else {
+                    *add_to_list = Some(vec![kv])
+                }
+            }
+            Self::Bind(key, value) => {
+                let kv = (key.clone(), value.clone());
+
+                let add_to_list = if is_custom_component {
+                    &mut add_to.js_props
+                } else {
+                    &mut add_to.js_attrs
+                };
+
+                if let Some(list) = add_to_list.as_mut() {
+                    list.push(kv);
+                } else {
+                    *add_to_list = Some(vec![kv])
+                }
+            }
+            Self::On(key, value) => {
+                let kv = (key.clone(), value.clone());
+
+                if let Some(on) = add_to.on.as_mut() {
+                    on.push(kv);
+                } else {
+                    add_to.on = Some(vec![kv]);
+                }
+            }
+            Self::Text(_) => todo("v-text"),
+            Self::Html(_) => todo("v-html"),
+            Self::Show(_) => todo("v-show"),
+            Self::If(_) => todo("v-if"),
+            Self::Else => todo("v-else"),
+            Self::ElseIf(_) => todo("v-else-if"),
+            Self::For(_) => todo("v-for"),
+            Self::Model(_) => todo("v-model"),
+            Self::Slot(_) => todo("v-slot"),
+            Self::Pre(_) => todo("v-pre"),
+            Self::Cloak(_) => todo("v-cloak"),
+            Self::Once => todo("v-once"),
+        }
+    }
+    fn key_eq(&self, parser: &Parser, key: &str) -> bool {
+        match self {
+            Self::Default(key_location, _) => key_location.eq(parser, key.chars()),
+            Self::Bind(key_location, _) => {
+                if key.starts_with(':') {
+                    key_location.eq(parser, key.chars().skip(1))
+                } else if key.starts_with("v-bind:") {
+                    key_location.eq(parser, key.chars().skip(7))
+                } else {
+                    key_location.eq(parser, key.chars())
+                }
+            }
+            Self::On(key_location, _) => {
+                if key.starts_with('@') {
+                    key_location.eq(parser, key.chars().skip(1))
+                } else if key.starts_with("v-on:") {
+                    key_location.eq(parser, key.chars().skip(5))
+                } else {
+                    key_location.eq(parser, key.chars())
+                }
+            }
+            Self::Text(_) => key == "v-text",
+            Self::Html(_) => key == "v-html",
+            Self::Show(_) => key == "v-show",
+            Self::If(_) => key == "v-if",
+            Self::Else => key == "v-else",
+            Self::ElseIf(_) => key == "v-else-if",
+            Self::For(_) => key == "v-for",
+            Self::Model(_) => key == "v-model",
+            Self::Slot(_) => key == "v-slot",
+            Self::Pre(_) => key == "v-pre",
+            Self::Cloak(_) => key == "v-cloak",
+            Self::Once => key == "v-once",
+        }
+    }
+    fn value(&self) -> SourceLocation {
+        match self {
+            Self::Default(_, v) => v.clone().unwrap_or(SourceLocation::empty()),
+            Self::On(_, v)
+            | Self::Bind(_, v)
+            | Self::Text(v)
+            | Self::Html(v)
+            | Self::Show(v)
+            | Self::If(v)
+            | Self::ElseIf(v)
+            | Self::For(v)
+            | Self::Model(v)
+            | Self::Slot(v)
+            | Self::Pre(v)
+            | Self::Cloak(v) => v.0.clone(),
+            Self::Once => SourceLocation::empty(),
+            Self::Else => SourceLocation::empty(),
+        }
+    }
 }
