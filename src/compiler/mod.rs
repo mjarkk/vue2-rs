@@ -339,7 +339,7 @@ impl Parser {
                     ));
                 }
                 return if let Some(value_location) = value_location {
-                    Ok(Some((TagArg::On(key_location, value_location), c)))
+                    Ok(Some((TagArg::Bind(key_location, value_location), c)))
                 } else {
                     Err(ParserError::new(
                         "try_parse_arg",

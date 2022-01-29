@@ -336,7 +336,7 @@ mod tests {
             }
 
             #[test]
-            fn bind_arg() {
+            fn v_bind_arg() {
                 template_to_js_eq(
                     "<h1 v-bind:value='value'>Hmm</h1>",
                     "_c('h1',{attrs:{\"value\":_vm.value}},[_vm._v(\"Hmm\")])",
@@ -345,6 +345,39 @@ mod tests {
                 template_to_js_eq(
                     "<custom-component v-bind:value='value'>Hmm</custom-component>",
                     "_c('custom-component',{props:{\"value\":_vm.value}},[_vm._v(\"Hmm\")])",
+                );
+
+                template_to_js_eq(
+                    "<h1 :value='value'>Hmm</h1>",
+                    "_c('h1',{attrs:{\"value\":_vm.value}},[_vm._v(\"Hmm\")])",
+                );
+
+                template_to_js_eq(
+                    "<custom-component :value='value'>Hmm</custom-component>",
+                    "_c('custom-component',{props:{\"value\":_vm.value}},[_vm._v(\"Hmm\")])",
+                );
+            }
+
+            #[test]
+            fn v_on_arg() {
+                template_to_js_eq(
+                    "<h1 v-on:value='value($event)'>Hmm</h1>",
+                    "_c('h1',{on:{\"value\":$event=>{_vm.value($_vm.event)}}},[_vm._v(\"Hmm\")])",
+                );
+
+                template_to_js_eq(
+                    "<custom-component v-on:value='value($event)'>Hmm</custom-component>",
+                    "_c('custom-component',{on:{\"value\":$event=>{_vm.value($_vm.event)}}},[_vm._v(\"Hmm\")])",
+                );
+
+                template_to_js_eq(
+                    "<h1 @value='value($event)'>Hmm</h1>",
+                    "_c('h1',{on:{\"value\":$event=>{_vm.value($_vm.event)}}},[_vm._v(\"Hmm\")])",
+                );
+
+                template_to_js_eq(
+                    "<custom-component @value='value($event)'>Hmm</custom-component>",
+                    "_c('custom-component',{on:{\"value\":$event=>{_vm.value($_vm.event)}}},[_vm._v(\"Hmm\")])",
                 );
             }
         }
