@@ -12,18 +12,18 @@ pub fn add_vm_references(
     let mut current = if let Some(location) = js_global_refs_iter.next() {
         location
     } else {
-        js.chars_write_to_vec(p, dest);
+        js.write_to_vec(p, dest);
         return;
     };
 
     loop {
-        SourceLocation(last.1, current.0).chars_write_to_vec(p, dest);
+        SourceLocation(last.1, current.0).write_to_vec(p, dest);
         dest.push('_');
         dest.push('v');
         dest.push('m');
         if !current.eq(p, "this".chars()) {
             dest.push('.');
-            current.chars_write_to_vec(p, dest);
+            current.write_to_vec(p, dest);
         }
 
         last = current.clone();
@@ -34,7 +34,7 @@ pub fn add_vm_references(
         }
     }
 
-    SourceLocation(current.1, js.1).chars_write_to_vec(p, dest);
+    SourceLocation(current.1, js.1).write_to_vec(p, dest);
 }
 
 pub fn compile_template_var(p: &mut Parser) -> Result<Vec<SourceLocation>, ParserError> {

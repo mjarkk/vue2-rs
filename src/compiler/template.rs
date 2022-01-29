@@ -231,7 +231,7 @@ impl Child {
                 // Writes:
                 // _c('div', [_c(..), _c(..)])
                 write_str("_c('", resp);
-                tag.name.chars_write_to_vec(p, resp);
+                tag.name.write_to_vec_escape(p, resp, '\'', '\\');
                 resp.push('\'');
                 if tag.args.len() != 0 {
                     let is_custom_component = tag.is_custom_component(p);
@@ -441,12 +441,12 @@ impl JsTagArgs {
                     attrs_entries.add(dest);
 
                     dest.push('"');
-                    key.chars_write_to_vec(p, dest);
+                    key.write_to_vec_escape(p, dest, '"', '\\');
                     write_str("\":", dest);
 
                     if let Some(value) = value {
                         dest.push('"');
-                        value.chars_write_to_vec(p, dest);
+                        value.write_to_vec_escape(p, dest, '"', '\\');
                         dest.push('"');
                     } else {
                         write_str("true", dest);
@@ -469,12 +469,12 @@ impl JsTagArgs {
                     props_entries.add(dest);
 
                     dest.push('"');
-                    key.chars_write_to_vec(p, dest);
+                    key.write_to_vec_escape(p, dest, '"', '\\');
                     write_str("\":", dest);
 
                     if let Some(value) = value {
                         dest.push('"');
-                        value.chars_write_to_vec(p, dest);
+                        value.write_to_vec_escape(p, dest, '"', '\\');
                         dest.push('"');
                     } else {
                         write_str("true", dest);

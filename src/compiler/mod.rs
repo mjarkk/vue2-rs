@@ -739,8 +739,23 @@ impl SourceLocation {
             Vec::new()
         }
     }
-    pub fn chars_write_to_vec(&self, parser: &Parser, dest: &mut Vec<char>) {
+    pub fn write_to_vec(&self, parser: &Parser, dest: &mut Vec<char>) {
         for c in self.chars(parser) {
+            dest.push(*c);
+        }
+    }
+    pub fn write_to_vec_escape(
+        &self,
+        parser: &Parser,
+        dest: &mut Vec<char>,
+        qoute: char,
+        escape_char: char,
+    ) {
+        for c in self.chars(parser) {
+            let cc = *c;
+            if cc == qoute || cc == escape_char {
+                dest.push(escape_char);
+            }
             dest.push(*c);
         }
     }
