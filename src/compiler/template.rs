@@ -553,22 +553,20 @@ pub struct JsTagArgs {
     // Same API as `v-bind:class`, accepting either
     // a string, object, or array of strings and objects.
     // {foo: true, bar: false}
-    pub class: Option<SourceLocation>,
+    pub class: Option<StaticOrDynamicArg>,
 
     // Same API as `v-bind:style`, accepting either
     // a string, object, or array of objects.
     //{ color: 'red', fontSize: '14px'}
-    pub style: Option<SourceLocation>,
+    pub style: Option<StaticOrDynamicArg>,
 
     // Normal HTML attributes
     // { foo: 'bar' }
-    pub static_attrs: Option<Vec<(SourceLocation, Option<SourceLocation>)>>,
-    pub js_attrs: Option<Vec<(SourceLocation, (SourceLocation, Vec<SourceLocation>))>>,
+    pub attrs: Option<Vec<(SourceLocation, StaticOrDynamicArg)>>,
 
     // Component props
     // { myProp: 'bar' }
-    pub static_props: Option<Vec<(SourceLocation, Option<SourceLocation>)>>,
-    pub js_props: Option<Vec<(SourceLocation, (SourceLocation, Vec<SourceLocation>))>>,
+    pub props: Option<Vec<(SourceLocation, StaticOrDynamicArg)>>,
 
     // DOM properties
     // domProps: { innerHTML: 'baz' }
@@ -585,7 +583,7 @@ pub struct JsTagArgs {
     // native events, rather than events emitted from
     // the component using `vm.$emit`.
     // nativeOn: { click: this.nativeClickHandler }
-    pub native_on: Option<Vec<(SourceLocation, SourceLocation)>>,
+    pub native_on: Option<Vec<(SourceLocation, (SourceLocation, Vec<SourceLocation>))>>,
 
     // Custom directives. Note that the `binding`'s
     // `oldValue` cannot be set, as Vue keeps track
@@ -605,9 +603,9 @@ pub struct JsTagArgs {
 
     // Other special top-level properties
     // "myKey"
-    pub key: Option<String>,
+    pub key: Option<StaticOrDynamicArg>,
     // ref = "myRef"
-    pub ref_: Option<String>,
+    pub ref_: Option<StaticOrDynamicArg>,
 
     // If you are applying the same ref name to multiple
     // elements in the render function. This will make `$refs.myRef` become an array
@@ -615,15 +613,20 @@ pub struct JsTagArgs {
     pub ref_in_for: Option<bool>,
 }
 
+// Refers to a section of the template that should be treaded like static data or dynamic data (js in template code)
+#[derive(Debug)]
+pub enum StaticOrDynamicArg {
+    Static(Option<SourceLocation>),
+    Dynamic(SourceLocation, Vec<SourceLocation>),
+}
+
 impl JsTagArgs {
     fn new() -> Self {
         Self {
             class: None,
             style: None,
-            static_attrs: None,
-            js_attrs: None,
-            static_props: None,
-            js_props: None,
+            attrs: None,
+            props: None,
             dom_props: None,
             on: None,
             native_on: None,
@@ -642,76 +645,60 @@ impl JsTagArgs {
         // TODO: class // Option<SourceLocation>,
         // TODO: style // Option<SourceLocation>,
 
-        if self.static_attrs.is_some() || self.js_attrs.is_some() {
+        if let Some(attrs) = self.attrs.as_ref() {
             object_entries.add(dest);
             write_str("attrs:{", dest);
             let mut attrs_entries = CommaSeperatedEntries::new();
 
-            if let Some(attrs) = self.static_attrs.as_ref() {
-                for (key, value) in attrs {
-                    attrs_entries.add(dest);
+            for (key, value) in attrs {
+                attrs_entries.add(dest);
 
-                    dest.push('"');
-                    key.write_to_vec_escape(p, dest, '"', '\\');
-                    write_str("\":", dest);
+                dest.push('"');
+                key.write_to_vec_escape(p, dest, '"', '\\');
+                write_str("\":", dest);
 
-                    if let Some(value) = value {
+                match value {
+                    StaticOrDynamicArg::Static(Some(value)) => {
                         dest.push('"');
                         value.write_to_vec_escape(p, dest, '"', '\\');
                         dest.push('"');
-                    } else {
+                    }
+                    StaticOrDynamicArg::Static(None) => {
                         write_str("true", dest);
                     }
-                }
-            }
-
-            if let Some(attrs) = self.js_attrs.as_ref() {
-                for (key, value) in attrs {
-                    attrs_entries.add(dest);
-
-                    dest.push('"');
-                    key.write_to_vec_escape(p, dest, '"', '\\');
-                    write_str("\":", dest);
-
-                    js::add_vm_references(p, dest, &value.0, &value.1);
+                    StaticOrDynamicArg::Dynamic(js, global_refs) => {
+                        js::add_vm_references(p, dest, &js, &global_refs);
+                    }
                 }
             }
 
             dest.push('}');
         }
 
-        if self.static_props.is_some() || self.js_props.is_some() {
+        if let Some(props) = self.props.as_ref() {
             object_entries.add(dest);
             write_str("props:{", dest);
             let mut props_entries = CommaSeperatedEntries::new();
 
-            if let Some(props) = self.static_props.as_ref() {
-                for (key, value) in props {
-                    props_entries.add(dest);
+            for (key, value) in props {
+                props_entries.add(dest);
 
-                    dest.push('"');
-                    key.write_to_vec_escape(p, dest, '"', '\\');
-                    write_str("\":", dest);
+                dest.push('"');
+                key.write_to_vec_escape(p, dest, '"', '\\');
+                write_str("\":", dest);
 
-                    if let Some(value) = value {
+                match value {
+                    StaticOrDynamicArg::Static(Some(value)) => {
                         dest.push('"');
                         value.write_to_vec_escape(p, dest, '"', '\\');
                         dest.push('"');
-                    } else {
+                    }
+                    StaticOrDynamicArg::Static(None) => {
                         write_str("true", dest);
                     }
-                }
-            }
-
-            if let Some(attrs) = self.js_props.as_ref() {
-                for (key, value) in attrs {
-                    props_entries.add(dest);
-
-                    dest.push('"');
-                    key.write_to_vec_escape(p, dest, '"', '\\');
-                    write_str("\":", dest);
-
-                    js::add_vm_references(p, dest, &value.0, &value.1);
+                    StaticOrDynamicArg::Dynamic(js, global_refs) => {
+                        js::add_vm_references(p, dest, &js, &global_refs);
+                    }
                 }
             }
 
@@ -949,12 +936,12 @@ impl TagArg {
 
         match self {
             Self::Default(key, value) => {
-                let kv = (key.clone(), value.clone());
+                let kv = (key.clone(), StaticOrDynamicArg::Static(value.clone()));
 
                 let add_to_list = if is_custom_component {
-                    &mut add_to.static_props
+                    &mut add_to.props
                 } else {
-                    &mut add_to.static_attrs
+                    &mut add_to.attrs
                 };
 
                 if let Some(list) = add_to_list.as_mut() {
@@ -964,12 +951,15 @@ impl TagArg {
                 }
             }
             Self::Bind(key, value) => {
-                let kv = (key.clone(), value.clone());
+                let kv = (
+                    key.clone(),
+                    StaticOrDynamicArg::Dynamic(value.0.clone(), value.1.clone()),
+                );
 
                 let add_to_list = if is_custom_component {
-                    &mut add_to.js_props
+                    &mut add_to.props
                 } else {
-                    &mut add_to.js_attrs
+                    &mut add_to.attrs
                 };
 
                 if let Some(list) = add_to_list.as_mut() {
