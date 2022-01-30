@@ -449,7 +449,7 @@ impl Child {
 
                     let mut js_tag_args = JsTagArgs::new();
                     for arg in tag.args.iter() {
-                        arg.insert_into_js_tag_args(&mut js_tag_args, is_custom_component);
+                        arg.insert_into_js_tag_args(p, &mut js_tag_args, is_custom_component);
                     }
 
                     resp.push(',');
@@ -487,7 +487,7 @@ impl Child {
             }
             Self::Var(var, global_refs) => {
                 write_str("_vm._s(", resp);
-                js::add_vm_references(p, resp, var, global_refs);
+                write_str(&js::add_vm_references(p, var, global_refs), resp);
                 resp.push(')');
             }
         }
@@ -553,37 +553,37 @@ pub struct JsTagArgs {
     // Same API as `v-bind:class`, accepting either
     // a string, object, or array of strings and objects.
     // {foo: true, bar: false}
-    pub class: Option<StaticOrDynamicArg>,
+    pub class: Option<String>,
 
     // Same API as `v-bind:style`, accepting either
     // a string, object, or array of objects.
     //{ color: 'red', fontSize: '14px'}
-    pub style: Option<StaticOrDynamicArg>,
+    pub style: Option<String>,
 
     // Normal HTML attributes
     // { foo: 'bar' }
-    pub attrs: Option<Vec<(SourceLocation, StaticOrDynamicArg)>>,
+    pub attrs: Option<Vec<(SourceLocation, String)>>,
 
     // Component props
     // { myProp: 'bar' }
-    pub props: Option<Vec<(SourceLocation, StaticOrDynamicArg)>>,
+    pub props: Option<Vec<(SourceLocation, String)>>,
 
     // DOM properties
     // domProps: { innerHTML: 'baz' }
-    pub dom_props: Option<Vec<(SourceLocation, SourceLocation)>>,
+    pub dom_props: Option<Vec<(SourceLocation, String)>>,
 
     // Event handlers are nested under `on`, though
     // modifiers such as in `v-on:keyup.enter` are not
     // supported. You'll have to manually check the
     // keyCode in the handler instead.
     // { click: this.clickHandler }
-    pub on: Option<Vec<(SourceLocation, (SourceLocation, Vec<SourceLocation>))>>,
+    pub on: Option<Vec<(SourceLocation, String)>>,
 
     // For components only. Allows you to listen to
     // native events, rather than events emitted from
     // the component using `vm.$emit`.
     // nativeOn: { click: this.nativeClickHandler }
-    pub native_on: Option<Vec<(SourceLocation, (SourceLocation, Vec<SourceLocation>))>>,
+    pub native_on: Option<Vec<(SourceLocation, String)>>,
 
     // Custom directives. Note that the `binding`'s
     // `oldValue` cannot be set, as Vue keeps track
@@ -603,21 +603,14 @@ pub struct JsTagArgs {
 
     // Other special top-level properties
     // "myKey"
-    pub key: Option<StaticOrDynamicArg>,
+    pub key: Option<String>,
     // ref = "myRef"
-    pub ref_: Option<StaticOrDynamicArg>,
+    pub ref_: Option<String>,
 
     // If you are applying the same ref name to multiple
     // elements in the render function. This will make `$refs.myRef` become an array
     // refInFor = true
     pub ref_in_for: Option<bool>,
-}
-
-// Refers to a section of the template that should be treaded like static data or dynamic data (js in template code)
-#[derive(Debug)]
-pub enum StaticOrDynamicArg {
-    Static(Option<SourceLocation>),
-    Dynamic(SourceLocation, Vec<SourceLocation>),
 }
 
 impl JsTagArgs {
@@ -657,18 +650,8 @@ impl JsTagArgs {
                 key.write_to_vec_escape(p, dest, '"', '\\');
                 write_str("\":", dest);
 
-                match value {
-                    StaticOrDynamicArg::Static(Some(value)) => {
-                        dest.push('"');
-                        value.write_to_vec_escape(p, dest, '"', '\\');
-                        dest.push('"');
-                    }
-                    StaticOrDynamicArg::Static(None) => {
-                        write_str("true", dest);
-                    }
-                    StaticOrDynamicArg::Dynamic(js, global_refs) => {
-                        js::add_vm_references(p, dest, &js, &global_refs);
-                    }
+                for c in value.chars() {
+                    dest.push(c);
                 }
             }
 
@@ -687,18 +670,8 @@ impl JsTagArgs {
                 key.write_to_vec_escape(p, dest, '"', '\\');
                 write_str("\":", dest);
 
-                match value {
-                    StaticOrDynamicArg::Static(Some(value)) => {
-                        dest.push('"');
-                        value.write_to_vec_escape(p, dest, '"', '\\');
-                        dest.push('"');
-                    }
-                    StaticOrDynamicArg::Static(None) => {
-                        write_str("true", dest);
-                    }
-                    StaticOrDynamicArg::Dynamic(js, global_refs) => {
-                        js::add_vm_references(p, dest, &js, &global_refs);
-                    }
+                for c in value.chars() {
+                    dest.push(c);
                 }
             }
 
@@ -719,7 +692,9 @@ impl JsTagArgs {
                 key.write_to_vec_escape(p, dest, '"', '\\');
                 write_str("\":$event=>{", dest);
 
-                js::add_vm_references(p, dest, &value.0, &value.1);
+                for c in value.chars() {
+                    dest.push(c);
+                }
 
                 dest.push('}');
             }
@@ -931,12 +906,39 @@ pub enum TagArg {
 }
 
 impl TagArg {
-    pub fn insert_into_js_tag_args(&self, add_to: &mut JsTagArgs, is_custom_component: bool) {
+    pub fn insert_into_js_tag_args(
+        &self,
+        p: &Parser,
+        add_to: &mut JsTagArgs,
+        is_custom_component: bool,
+    ) {
         let todo = |v| todo!("support {}", v);
 
         match self {
             Self::Default(key, value) => {
-                let kv = (key.clone(), StaticOrDynamicArg::Static(value.clone()));
+                let js_value = match value {
+                    Some(v) => {
+                        let mut s = String::new();
+                        s.push('"');
+                        for c in v.chars(p) {
+                            match c {
+                                '\\' => {
+                                    s.push('\\');
+                                    s.push('\\');
+                                }
+                                '"' => {
+                                    s.push('\\');
+                                    s.push('"');
+                                }
+                                c => s.push(*c),
+                            }
+                        }
+                        s.push('"');
+                        s
+                    }
+                    None => String::from("true"),
+                };
+                let kv = (key.clone(), js_value);
 
                 let add_to_list = if is_custom_component {
                     &mut add_to.props
@@ -951,10 +953,7 @@ impl TagArg {
                 }
             }
             Self::Bind(key, value) => {
-                let kv = (
-                    key.clone(),
-                    StaticOrDynamicArg::Dynamic(value.0.clone(), value.1.clone()),
-                );
+                let kv = (key.clone(), js::add_vm_references(p, &value.0, &value.1));
 
                 let add_to_list = if is_custom_component {
                     &mut add_to.props
@@ -969,7 +968,7 @@ impl TagArg {
                 }
             }
             Self::On(key, value) => {
-                let kv = (key.clone(), value.clone());
+                let kv = (key.clone(), js::add_vm_references(p, &value.0, &value.1));
 
                 if let Some(on) = add_to.on.as_mut() {
                     on.push(kv);

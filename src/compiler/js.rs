@@ -2,28 +2,25 @@ use super::{template, utils::is_space, Parser, ParserError, QuoteKind, SourceLoc
 
 pub fn add_vm_references(
     p: &Parser,
-    dest: &mut Vec<char>,
     js: &SourceLocation,
     js_global_refs: &Vec<SourceLocation>,
-) {
+) -> String {
+    let mut resp = String::new();
     let mut js_global_refs_iter = js_global_refs.iter();
 
     let mut last = SourceLocation(js.0, js.0);
     let mut current = if let Some(location) = js_global_refs_iter.next() {
         location
     } else {
-        js.write_to_vec(p, dest);
-        return;
+        return js.string(p);
     };
 
     loop {
-        SourceLocation(last.1, current.0).write_to_vec(p, dest);
-        dest.push('_');
-        dest.push('v');
-        dest.push('m');
+        resp.push_str(&SourceLocation(last.1, current.0).string(p));
+        resp.push_str("_vm");
         if !current.eq(p, "this".chars()) {
-            dest.push('.');
-            current.write_to_vec(p, dest);
+            resp.push('.');
+            resp.push_str(&current.string(p));
         }
 
         last = current.clone();
@@ -34,7 +31,9 @@ pub fn add_vm_references(
         }
     }
 
-    SourceLocation(current.1, js.1).write_to_vec(p, dest);
+    resp.push_str(&SourceLocation(current.1, js.1).string(p));
+
+    resp
 }
 
 // parses {{ foo + ' ' + bar }}

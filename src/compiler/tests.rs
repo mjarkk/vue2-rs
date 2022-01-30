@@ -409,16 +409,10 @@ mod tests {
                 global_vars.push(location.string(&parser));
             }
 
-            let mut js_with_vm_references = Vec::with_capacity(js.len() + 4);
-            js::add_vm_references(
-                &parser,
-                &mut js_with_vm_references,
-                &SourceLocation(0, js.len()),
-                &global_var_locations,
-            );
-            let js_with_vm_references_str: String = js_with_vm_references.iter().collect();
+            let js_with_vm_references =
+                js::add_vm_references(&parser, &SourceLocation(0, js.len()), &global_var_locations);
 
-            assert_eq!(js_with_vm_references_str, expected_result);
+            assert_eq!(js_with_vm_references, expected_result);
         }
 
         #[test]
