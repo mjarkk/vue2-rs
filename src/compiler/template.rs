@@ -105,7 +105,11 @@ pub fn parse_tag(p: &mut Parser) -> Result<Tag, ParserError> {
 
 // Try_parse_arg parses a key="value" , :key="value" , v-bind:key="value" , v-on:key="value" and @key="value"
 // It returns Ok(None) if first_char is not a char expected as first character of a argument
-fn try_parse_arg(p: &mut Parser, mut c: char) -> Result<Option<(TagArg, char)>, ParserError> {
+fn try_parse_arg(
+    p: &mut Parser,
+    mut c: char,
+    result_args: &mut JsTagArgs,
+) -> Result<Option<char>, ParserError> {
     let mut is_v_on_shotcut = false;
     let mut is_v_bind_shotcut = false;
 
@@ -181,7 +185,17 @@ fn try_parse_arg(p: &mut Parser, mut c: char) -> Result<Option<(TagArg, char)>, 
                 ));
             }
             return if let Some(value_location) = value_location {
-                Ok(Some((TagArg::On(key_location, value_location), c)))
+                let kv = (
+                    key_location,
+                    js::add_vm_references(p, &value_location.0, &value_location.1),
+                );
+                if let Some(list) = result_args.on.as_ref() {
+                    list.push(kv);
+                } else {
+                    result_args.on = Some(vec![kv]);
+                }
+
+                Ok(Some(c))
             } else {
                 Err(ParserError::new(
                     "try_parse_arg",
@@ -272,9 +286,9 @@ fn try_parse_arg(p: &mut Parser, mut c: char) -> Result<Option<(TagArg, char)>, 
             ))
         }
     } else {
-        let value_location: Option<SourceLocation> = if has_value {
+        let value: String = if has_value {
             // Parse a static argument
-            Some(match p.must_read_one()? {
+            let value_location = match p.must_read_one()? {
                 '"' => {
                     let start = p.current_char;
                     p.parse_quotes(QuoteKind::HTMLDouble, &mut None)?;
@@ -305,12 +319,36 @@ fn try_parse_arg(p: &mut Parser, mut c: char) -> Result<Option<(TagArg, char)>, 
                     }
                     SourceLocation(start, p.current_char - 1)
                 }
-            })
+            };
+
+            let mut s = String::new();
+            s.push('"');
+            for c in value_location.chars(p) {
+                match c {
+                    '\\' => {
+                        s.push('\\');
+                        s.push('\\');
+                    }
+                    '"' => {
+                        s.push('\\');
+                        s.push('"');
+                    }
+                    c => s.push(*c),
+                }
+            }
+            s.push('"');
+            s
         } else {
-            None
+            String::from("true")
         };
 
-        Ok(Some((TagArg::Default(key_location, value_location), c)))
+        if let Some(list) = result_args.attrs_or_props.as_mut() {
+            list.push((key_location, value));
+        } else {
+            result_args.attrs_or_props = Some(vec![(key_location, value)])
+        }
+
+        Ok(Some(c))
     }
 }
 
@@ -568,6 +606,8 @@ pub struct JsTagArgs {
     // { myProp: 'bar' }
     pub props: Option<Vec<(SourceLocation, String)>>,
 
+    pub attrs_or_props: Option<Vec<(SourceLocation, String)>>,
+
     // DOM properties
     // domProps: { innerHTML: 'baz' }
     pub dom_props: Option<Vec<(SourceLocation, String)>>,
@@ -620,6 +660,7 @@ impl JsTagArgs {
             style: None,
             attrs: None,
             props: None,
+            attrs_or_props: None,
             dom_props: None,
             on: None,
             native_on: None,
