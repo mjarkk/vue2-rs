@@ -200,7 +200,7 @@ fn try_parse_arg(
                 ));
             }
 
-            result_args.add(VueArgKind::On, key_location, value);
+            result_args.add(VueArgKind::On, key_location.string(p), value);
             return Ok(Some(c));
         }
 
@@ -221,7 +221,7 @@ fn try_parse_arg(
                 ));
             }
 
-            result_args.add(VueArgKind::Bind, key_location, value);
+            result_args.add(VueArgKind::Bind, key_location.string(p), value);
             return Ok(Some(c));
         }
 
@@ -268,7 +268,7 @@ fn try_parse_arg(
                     key_location.0 += 1;
                 }
 
-                result_args.add(arg_kind(), key_location, value);
+                result_args.add(arg_kind(), key_location.string(p), value);
 
                 Ok(Some(c))
             }
@@ -336,7 +336,7 @@ fn try_parse_arg(
             String::from("true")
         };
 
-        result_args.add(VueArgKind::Default, key_location, value_as_js);
+        result_args.add(VueArgKind::Default, key_location.string(p), value_as_js);
         Ok(Some(c))
     }
 }
@@ -587,24 +587,24 @@ pub struct JsTagArgs {
     // OR
     // Component props
     // { foo: 'bar' }
-    pub attrs_or_props: Option<Vec<(SourceLocation, String)>>,
+    pub attrs_or_props: Option<Vec<(String, String)>>,
 
     // DOM properties
     // domProps: { innerHTML: 'baz' }
-    pub dom_props: Option<Vec<(SourceLocation, String)>>,
+    pub dom_props: Option<Vec<(String, String)>>,
 
     // Event handlers are nested under `on`, though
     // modifiers such as in `v-on:keyup.enter` are not
     // supported. You'll have to manually check the
     // keyCode in the handler instead.
     // { click: this.clickHandler }
-    pub on: Option<Vec<(SourceLocation, String)>>,
+    pub on: Option<Vec<(String, String)>>,
 
     // For components only. Allows you to listen to
     // native events, rather than events emitted from
     // the component using `vm.$emit`.
     // nativeOn: { click: this.nativeClickHandler }
-    pub native_on: Option<Vec<(SourceLocation, String)>>,
+    pub native_on: Option<Vec<(String, String)>>,
 
     // Custom directives. Note that the `binding`'s
     // `oldValue` cannot be set, as Vue keeps track
@@ -655,14 +655,12 @@ impl JsTagArgs {
     pub fn has_attr_or_prop(&self, p: &Parser, name: &str) -> Option<&str> {
         if let Some(attrs_or_props) = self.attrs_or_props.as_ref() {
             for (key, js_value) in attrs_or_props {
-                if key.eq(p, name.chars()) {
+                if key == name {
                     return Some(&js_value);
                 }
             }
-            None
-        } else {
-            None
         }
+        None
     }
 
     pub fn has_attr_or_prop_with_string(&self, p: &Parser, name: &str) -> Option<String> {
@@ -687,9 +685,10 @@ impl JsTagArgs {
         Some(resp)
     }
 
-    fn add(&mut self, kind: VueArgKind, key: SourceLocation, value_as_js: String) {
+    fn add(&mut self, kind: VueArgKind, key: String, value_as_js: String) {
         self.has_js_component_args = match kind {
             VueArgKind::Default => {
+                // key.eq(p, "class style slot key ref".chars());
                 add_or_set(&mut self.attrs_or_props, (key, value_as_js));
                 true
             }
@@ -756,8 +755,17 @@ impl JsTagArgs {
         dest.push('{');
         let mut object_entries = CommaSeperatedEntries::new();
 
-        // TODO: class // Option<SourceLocation>,
-        // TODO: style // Option<SourceLocation>,
+        if let Some(class) = self.class.as_ref() {
+            object_entries.add(dest);
+            write_str("class:", dest);
+            write_str(&class, dest);
+        }
+
+        if let Some(style) = self.style.as_ref() {
+            object_entries.add(dest);
+            write_str("style:", dest);
+            write_str(&style, dest);
+        }
 
         if let Some(attrs) = self.attrs_or_props.as_ref() {
             object_entries.add(dest);
@@ -772,7 +780,7 @@ impl JsTagArgs {
                 attrs_entries.add(dest);
 
                 dest.push('"');
-                key.write_to_vec_escape(p, dest, '"', '\\');
+                write_str(&js::escape_quotes(key, '"'), dest);
                 write_str("\":", dest);
 
                 for c in value.chars() {
@@ -794,7 +802,7 @@ impl JsTagArgs {
                 on_entries.add(dest);
 
                 dest.push('"');
-                key.write_to_vec_escape(p, dest, '"', '\\');
+                write_str(&js::escape_quotes(key, '"'), dest);
                 write_str("\":$event=>{", dest);
 
                 for c in value.chars() {
@@ -809,9 +817,25 @@ impl JsTagArgs {
 
         // TODO: native_on // Option<Vec<(SourceLocation, SourceLocation)>>,
         // TODO: directives // Option<Vec<JsTagArgsDirective>>,
-        // TODO: slot // Option<String>, // "name-of-slot"
-        // TODO: key // Option<String>,
-        // TODO: ref_ // Option<String>,
+
+        if let Some(slot) = self.slot.as_ref() {
+            object_entries.add(dest);
+            write_str("slot:", dest);
+            write_str(&slot, dest);
+        }
+
+        if let Some(key) = self.key.as_ref() {
+            object_entries.add(dest);
+            write_str("key:", dest);
+            write_str(&key, dest);
+        }
+
+        if let Some(ref_) = self.ref_.as_ref() {
+            object_entries.add(dest);
+            write_str("ref:", dest);
+            write_str(&ref_, dest);
+        }
+
         // TODO: ref_in_for // Option<bool>,
         dest.push('}');
     }

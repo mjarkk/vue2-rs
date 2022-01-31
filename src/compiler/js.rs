@@ -391,3 +391,21 @@ fn parse_comment(p: &mut Parser) -> Result<bool, ParserError> {
         _ => Ok(false),
     }
 }
+
+pub fn escape_quotes(input: &str, quote: char) -> String {
+    let mut resp = String::new();
+    for c in input.chars() {
+        match c {
+            c if c == quote => {
+                resp.push('\\');
+                resp.push(quote);
+            }
+            '\\' => {
+                resp.push('\\');
+                resp.push('\\');
+            }
+            c => resp.push(c),
+        }
+    }
+    resp
+}
