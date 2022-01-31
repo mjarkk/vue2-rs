@@ -19,20 +19,20 @@ pub struct Parser {
 
 #[derive(Debug, Clone)]
 pub struct Script {
-    pub lang: Option<SourceLocation>,
+    pub lang: Option<String>,
     pub default_export_location: Option<SourceLocation>,
     pub content: SourceLocation,
 }
 
 #[derive(Debug, Clone)]
 pub struct Template {
-    pub lang: Option<SourceLocation>,
+    pub lang: Option<String>,
     pub content: Vec<template::Child>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Style {
-    pub lang: Option<SourceLocation>,
+    pub lang: Option<String>,
     pub scoped: bool,
     pub content: SourceLocation,
 }
@@ -109,16 +109,7 @@ impl Parser {
                         TagType::Open => {},
                     };
 
-                    let lang: Option<SourceLocation> = if let Some(lang_arg) = top_level_tag.1.arg(self, "lang") {
-                        let arg_value = lang_arg.value();
-                        if arg_value.is_empty() {
-                            None
-                        } else {
-                            Some(arg_value)
-                        }
-                    } else {
-                        None
-                    };
+                    let lang: Option<String> = top_level_tag.1.args.has_attr_or_prop_with_string(self, "lang");
 
                     match top_level_tag.0 {
                         TopLevelTag::DocType => continue,
@@ -152,7 +143,10 @@ impl Parser {
                             let style_start = self.current_char;
                             let SourceLocation(style_end, _) = self.look_for("</style>".chars().collect())?;
 
-                            let scoped = top_level_tag.1.arg(self, "scoped").is_some();
+                            let scoped = match top_level_tag.1.args.has_attr_or_prop(self, "scoped") {
+                                Some("true") => true,
+                                _ => false,
+                            };
 
                             self.styles.push(Style{
                                 lang,

@@ -96,7 +96,7 @@ mod tests {
 
         let script = result.script.as_ref().unwrap();
         assert_eq!(script.content.string(&result), "export default {}");
-        assert_eq!(script.lang.as_ref().unwrap().string(&result), "ts");
+        assert_eq!(script.lang.as_ref().unwrap(), "ts");
         assert_eq!(
             script
                 .default_export_location
@@ -113,12 +113,12 @@ mod tests {
 
         let style_2 = result.styles.get(1).unwrap();
         assert_eq!(style_2.content.string(&result), "h2 {color: red;}");
-        assert_eq!(style_2.lang.clone().unwrap().string(&result), "scss");
+        assert_eq!(style_2.lang.clone().unwrap(), "scss");
         assert!(!style_2.scoped);
 
         let style_3 = result.styles.get(2).unwrap();
         assert_eq!(style_3.content.string(&result), "h3 {color: blue;}");
-        assert_eq!(style_3.lang.clone().unwrap().string(&result), "stylus");
+        assert_eq!(style_3.lang.clone().unwrap(), "stylus");
         assert!(style_3.scoped);
     }
 
