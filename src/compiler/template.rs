@@ -687,13 +687,15 @@ impl JsTagArgs {
 
     fn add(&mut self, kind: VueArgKind, key: String, value_as_js: String) {
         self.has_js_component_args = match kind {
-            VueArgKind::Default => {
-                // key.eq(p, "class style slot key ref".chars());
-                add_or_set(&mut self.attrs_or_props, (key, value_as_js));
-                true
-            }
-            VueArgKind::Bind => {
-                add_or_set(&mut self.attrs_or_props, (key, value_as_js));
+            VueArgKind::Default | VueArgKind::Bind => {
+                match key.as_str() {
+                    "class" => self.class = Some(value_as_js),
+                    "style" => self.style = Some(value_as_js),
+                    "slot" => self.slot = Some(value_as_js),
+                    "key" => self.key = Some(value_as_js),
+                    "ref" => self.ref_ = Some(value_as_js),
+                    _ => add_or_set(&mut self.attrs_or_props, (key, value_as_js)),
+                };
                 true
             }
             VueArgKind::On => {
