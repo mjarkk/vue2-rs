@@ -264,7 +264,7 @@ mod tests {
     }
 
     mod template_to_render_method {
-        use super::super::super::template::to_js::child_to_js;
+        use super::super::super::template::to_js::children_to_js;
         use super::*;
 
         fn template_to_js_eq(html: &str, eq: &str) {
@@ -275,21 +275,10 @@ mod tests {
             let parser_input = format!("<template>{}</template>", html);
             let result = Parser::new_and_parse(&parser_input).unwrap();
             let template = result.template.as_ref().unwrap();
-            let children_as_js: Vec<String> = template
-                .content
-                .iter()
-                .map(|child| {
-                    let mut resp: Vec<char> = Vec::new();
-                    child_to_js(child, &result, &mut resp);
-                    resp.iter().collect::<String>()
-                })
-                .collect();
 
-            if children_as_js.len() == 1 {
-                children_as_js[0].clone()
-            } else {
-                children_as_js.join(",")
-            }
+            let mut resp: Vec<char> = Vec::new();
+            children_to_js(&template.content, &result, &mut resp);
+            resp.iter().collect()
         }
 
         #[test]
@@ -379,6 +368,14 @@ mod tests {
                 template_to_js_eq(
                     "<custom-component @value='value($event)'>Hmm</custom-component>",
                     "_c('custom-component',{on:{\"value\":$event=>{_vm.value($_vm.event)}}},[_vm._v(\"Hmm\")])",
+                );
+            }
+
+            #[test]
+            fn v_if() {
+                template_to_js_eq(
+                    "<h1 v-if='value'>WHAA</h1>",
+                    "_vm.value?_c('h1',[_vm._v(\"WHAA\")]):_vm._e()",
                 );
             }
         }

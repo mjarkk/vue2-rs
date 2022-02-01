@@ -32,8 +32,7 @@ pub fn template_to_js(p: &Parser, resp: &mut Vec<char>) {
             write_str("[]", resp);
         }
         1 => {
-            let child = template.content.get(0).unwrap();
-            child_to_js(&child, p, resp);
+            children_to_js(&template.content, p, resp);
         }
         _ => {
             resp.push('[');
@@ -67,6 +66,7 @@ pub fn children_to_js(children: &Vec<Child>, p: &Parser, resp: &mut Vec<char>) {
     }
 }
 
+#[derive(Debug)]
 pub struct ChildToJsArtifacts {
     pub opened_inline_if_else: bool,
 }
