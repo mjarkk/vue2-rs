@@ -29,8 +29,8 @@ This is a project that is in progress
         - [ ] `v-for`
         - [ ] `v-pre`
         - [ ] `v-slot`
-        - [ ] `v-text`
-        - [ ] `v-html`
+        - [x] `v-text`
+        - [x] `v-html`
         - [ ] `v-show`
         - [ ] `v-once`
         - [ ] `v-model`

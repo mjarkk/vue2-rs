@@ -434,6 +434,22 @@ mod tests {
                     ),
                 );
             }
+
+            #[test]
+            fn v_text() {
+                template_to_js_eq(
+                    "<div v-text=\"'<div></div>'\" />",
+                    "_c('div',{domProps:{\"textContent\":'<div></div>'},[])",
+                )
+            }
+
+            #[test]
+            fn v_html() {
+                template_to_js_eq(
+                    "<div v-html=\"'<div></div>'\" />",
+                    "_c('div',{domProps:{\"innerHTML\":'<div></div>'},[])",
+                )
+            }
         }
     }
 

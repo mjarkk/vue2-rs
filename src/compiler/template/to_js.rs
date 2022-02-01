@@ -183,7 +183,23 @@ pub fn vue_tag_args_to_js(args: &VueTagArgs, dest: &mut Vec<char>, is_custom_com
         dest.push('}');
     }
 
-    // TODO: dom_props // Option<Vec<(SourceLocation, SourceLocation)>>,
+    if let Some(dom_props) = args.dom_props.as_ref() {
+        object_entries.add(dest);
+        write_str("domProps:{", dest);
+        let mut dom_props_entries = CommaSeparatedEntries::new();
+
+        for (key, value) in dom_props {
+            dom_props_entries.add(dest);
+
+            dest.push('"');
+            write_str(&js::escape_quotes(key, '"'), dest);
+            write_str("\":", dest);
+
+            for c in value.chars() {
+                dest.push(c);
+            }
+        }
+    }
 
     if let Some(on) = args.on.as_ref() {
         object_entries.add(dest);

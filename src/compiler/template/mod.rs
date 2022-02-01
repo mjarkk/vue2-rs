@@ -788,11 +788,17 @@ impl VueTagArgs {
                 true
             }
             VueArgKind::Text => {
-                todo!("Text");
+                add_or_set(
+                    &mut self.dom_props,
+                    (String::from("textContent"), value_as_js),
+                );
                 true
             }
             VueArgKind::Html => {
-                todo!("Html");
+                add_or_set(
+                    &mut self.dom_props,
+                    (String::from("innerHTML"), value_as_js),
+                );
                 true
             }
             VueArgKind::Show => {
