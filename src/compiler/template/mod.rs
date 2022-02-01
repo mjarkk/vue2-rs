@@ -1,11 +1,11 @@
 pub mod to_js;
 
-use super::utils::{is_space, write_str};
+use super::utils::is_space;
 use super::{js, Parser, ParserError, QuoteKind, SourceLocation, TagType};
 
 // parse_tag is expected to be next to the open indicator (<) at the first character of the tag name
 // TODO support upper case tag names
-pub fn parse_tag(p: &mut Parser) -> Result<Tag, ParserError> {
+pub fn parse_tag(p: &mut Parser, v_else_allowed: bool) -> Result<Tag, ParserError> {
     let mut tag = Tag {
         type_: TagType::Open,
         name: SourceLocation(p.current_char, 0),
@@ -67,7 +67,7 @@ pub fn parse_tag(p: &mut Parser) -> Result<Tag, ParserError> {
     // Parse args
     loop {
         c = p.must_read_one_skip_spacing()?;
-        c = match try_parse_arg(p, c, &mut tag.args)? {
+        c = match try_parse_arg(p, c, &mut tag.args, v_else_allowed)? {
             Some(next_char) => next_char,
             None => c,
         };
@@ -116,6 +116,7 @@ fn try_parse_arg(
     p: &mut Parser,
     mut c: char,
     result_args: &mut VueTagArgs,
+    v_else_allowed: bool,
 ) -> Result<Option<char>, ParserError> {
     let mut is_v_on_shotcut = false;
     let mut is_v_bind_shotcut = false;
@@ -202,7 +203,7 @@ fn try_parse_arg(
                 ));
             }
 
-            result_args.add(VueArgKind::On, key_location.string(p), value);
+            result_args.add(VueArgKind::On, key_location.string(p), value)?;
             return Ok(Some(c));
         }
 
@@ -223,7 +224,7 @@ fn try_parse_arg(
                 ));
             }
 
-            result_args.add(VueArgKind::Bind, key_location.string(p), value);
+            result_args.add(VueArgKind::Bind, key_location.string(p), value)?;
             return Ok(Some(c));
         }
 
@@ -270,7 +271,27 @@ fn try_parse_arg(
                     key_location.0 += 1;
                 }
 
-                result_args.add(arg_kind(), key_location.string(p), value);
+                let arg_kind = arg_kind();
+
+                if !v_else_allowed {
+                    match arg_kind {
+                        VueArgKind::ElseIf => {
+                            return Err(ParserError::new(
+                                "try_parse_arg",
+                                "cannot use v-else-if here",
+                            ));
+                        }
+                        VueArgKind::Else => {
+                            return Err(ParserError::new(
+                                "try_parse_arg",
+                                "cannot use v-else here",
+                            ));
+                        }
+                        _ => {}
+                    }
+                }
+
+                result_args.add(arg_kind, key_location.string(p), value)?;
 
                 Ok(Some(c))
             }
@@ -338,7 +359,7 @@ fn try_parse_arg(
             String::from("true")
         };
 
-        result_args.add(VueArgKind::Default, key_location.string(p), value_as_js);
+        result_args.add(VueArgKind::Default, key_location.string(p), value_as_js)?;
         Ok(Some(c))
     }
 }
@@ -367,15 +388,28 @@ impl Child {
         parents_tag_names: &mut Vec<SourceLocation>,
     ) -> Result<(Vec<Self>, SourceLocation), ParserError> {
         let mut resp: Vec<Child> = Vec::with_capacity(1);
+        let mut inside_v_if = false;
         loop {
             let (text_node, compile_now) = Self::compile_text_node(p)?;
             if let Some(node) = text_node {
+                inside_v_if = false;
                 resp.push(node);
             }
 
             match compile_now {
                 CompileAfterTextNode::Tag => {
-                    let tag = parse_tag(p)?;
+                    let tag = parse_tag(p, inside_v_if)?;
+
+                    if let Some(modifier) = tag.args.modifier.as_ref() {
+                        inside_v_if = match modifier {
+                            VueTagModifier::If(_) => true,
+                            VueTagModifier::ElseIf(_) => true,
+                            _ => false,
+                        };
+                    } else {
+                        inside_v_if = false;
+                    }
+
                     match tag.type_ {
                         TagType::Close => {
                             let mut found = false;
@@ -411,6 +445,7 @@ impl Child {
                     };
                 }
                 CompileAfterTextNode::Var => {
+                    inside_v_if = false;
                     resp.push(Self::parse_var(p)?);
                 }
             }
@@ -463,233 +498,23 @@ impl Child {
             global_vars,
         ))
     }
+
+    pub fn is_v_else_or_else_if(&self) -> bool {
+        if let Child::Tag(tag, _) = self {
+            if let Some(modifier) = tag.args.modifier.as_ref() {
+                match modifier {
+                    VueTagModifier::ElseIf(_) | VueTagModifier::Else => return true,
+                    _ => {}
+                }
+            }
+        }
+        false
+    }
 }
 
 enum CompileAfterTextNode {
     Tag,
     Var,
-}
-
-#[derive(Debug, Clone)]
-pub enum VueTagModifiers {
-    For(String),
-    If(String),
-    ElseIf(String),
-    Else,
-}
-
-// https://vuejs.org/v2/guide/render-function.html
-// This is a somewhat rust representation of the vue component render arguments
-#[derive(Debug, Clone)]
-pub struct VueTagArgs {
-    pub has_js_component_args: bool,
-
-    // Same API as `v-bind:class`, accepting either
-    // a string, object, or array of strings and objects.
-    // {foo: true, bar: false}
-    pub class: Option<String>,
-
-    // Same API as `v-bind:style`, accepting either
-    // a string, object, or array of objects.
-    //{ color: 'red', fontSize: '14px'}
-    pub style: Option<String>,
-
-    // Normal HTML attributes
-    // OR
-    // Component props
-    // { foo: 'bar' }
-    pub attrs_or_props: Option<Vec<(String, String)>>,
-
-    // DOM properties
-    // domProps: { innerHTML: 'baz' }
-    pub dom_props: Option<Vec<(String, String)>>,
-
-    // Event handlers are nested under `on`, though
-    // modifiers such as in `v-on:keyup.enter` are not
-    // supported. You'll have to manually check the
-    // keyCode in the handler instead.
-    // { click: this.clickHandler }
-    pub on: Option<Vec<(String, String)>>,
-
-    // For components only. Allows you to listen to
-    // native events, rather than events emitted from
-    // the component using `vm.$emit`.
-    // nativeOn: { click: this.nativeClickHandler }
-    pub native_on: Option<Vec<(String, String)>>,
-
-    // Custom directives. Note that the `binding`'s
-    // `oldValue` cannot be set, as Vue keeps track
-    // of it for you.
-    pub directives: Option<Vec<JsTagArgsDirective>>,
-
-    // TODO
-    // Scoped slots in the form of
-    // { name: props => VNode | Array<VNode> }
-    // scopedSlots: {
-    //   default: props => createElement('span', props.text)
-    // },
-
-    // The name of the slot, if this component is the
-    // child of another component
-    pub slot: Option<String>, // "name-of-slot"
-
-    // Other special top-level properties
-    // "myKey"
-    pub key: Option<String>,
-    // ref = "myRef"
-    pub ref_: Option<String>,
-
-    // If you are applying the same ref name to multiple
-    // elements in the render function. This will make `$refs.myRef` become an array
-    // refInFor = true
-    pub ref_in_for: Option<bool>,
-}
-
-impl VueTagArgs {
-    fn new() -> Self {
-        Self {
-            has_js_component_args: false,
-            class: None,
-            style: None,
-            attrs_or_props: None,
-            dom_props: None,
-            on: None,
-            native_on: None,
-            directives: None,
-            slot: None,
-            key: None,
-            ref_: None,
-            ref_in_for: None,
-        }
-    }
-
-    pub fn has_attr_or_prop(&self, name: &str) -> Option<&str> {
-        if let Some(attrs_or_props) = self.attrs_or_props.as_ref() {
-            for (key, js_value) in attrs_or_props {
-                if key == name {
-                    return Some(&js_value);
-                }
-            }
-        }
-        None
-    }
-
-    pub fn has_attr_or_prop_with_string(&self, name: &str) -> Option<String> {
-        let mut value = self.has_attr_or_prop(name)?.chars();
-
-        let quote = match value.next()? {
-            '\'' => '\'',
-            '"' => '"',
-            '`' => '`',
-            _ => return None,
-        };
-
-        let mut resp = String::new();
-        loop {
-            match value.next()? {
-                c if c == quote => break,
-                '\\' => resp.push(value.next()?),
-                c => resp.push(c),
-            }
-        }
-
-        Some(resp)
-    }
-
-    fn add(&mut self, kind: VueArgKind, key: String, value_as_js: String) {
-        self.has_js_component_args = match kind {
-            VueArgKind::Default | VueArgKind::Bind => {
-                match key.as_str() {
-                    "class" => self.class = Some(value_as_js),
-                    "style" => self.style = Some(value_as_js),
-                    "slot" => self.slot = Some(value_as_js),
-                    "key" => self.key = Some(value_as_js),
-                    "ref" => self.ref_ = Some(value_as_js),
-                    _ => add_or_set(&mut self.attrs_or_props, (key, value_as_js)),
-                };
-                true
-            }
-            VueArgKind::On => {
-                add_or_set(&mut self.on, (key, value_as_js));
-                true
-            }
-            VueArgKind::Text => {
-                todo!("Text");
-                true
-            }
-            VueArgKind::Html => {
-                todo!("Html");
-                true
-            }
-            VueArgKind::Show => {
-                todo!("Show");
-                true
-            }
-            VueArgKind::If => {
-                todo!("If");
-                false
-            }
-            VueArgKind::Else => {
-                todo!("Else");
-                false
-            }
-            VueArgKind::ElseIf => {
-                todo!("ElseIf");
-                false
-            }
-            VueArgKind::For => {
-                todo!("For");
-                false
-            }
-            VueArgKind::Model => {
-                todo!("Model");
-                true
-            }
-            VueArgKind::Slot => {
-                todo!("Slot");
-                true
-            }
-            VueArgKind::Pre => {
-                todo!("Pre");
-                true
-            }
-            VueArgKind::Cloak => {
-                todo!("Cloak");
-                true
-            }
-            VueArgKind::Once => {
-                todo!("Once");
-                true
-            }
-        }
-    }
-}
-
-pub enum VueArgKind {
-    Default,
-    Bind,
-    On,
-    Text,
-    Html,
-    Show,
-    If,
-    Else,
-    ElseIf,
-    For,
-    Model,
-    Slot,
-    Pre,
-    Cloak,
-    Once,
-}
-
-#[derive(Debug, Clone)]
-pub struct JsTagArgsDirective {
-    pub name: String,                   // "my-custom-directive"
-    pub value: String,                  // "2"
-    pub expression: String,             // "1 + 1"
-    pub arg: String,                    // "foo",
-    pub modifiers: Vec<(String, bool)>, // { bar: true }
 }
 
 #[derive(Debug, Clone)]
@@ -832,4 +657,263 @@ impl Tag {
 
         self.name.eq_some(parser, false, html_elements).is_none()
     }
+}
+
+// https://vuejs.org/v2/guide/render-function.html
+// This is a somewhat rust representation of the vue component render arguments
+#[derive(Debug, Clone)]
+pub struct VueTagArgs {
+    pub modifier: Option<VueTagModifier>,
+    pub has_js_component_args: bool,
+
+    // Same API as `v-bind:class`, accepting either
+    // a string, object, or array of strings and objects.
+    // {foo: true, bar: false}
+    pub class: Option<String>,
+
+    // Same API as `v-bind:style`, accepting either
+    // a string, object, or array of objects.
+    //{ color: 'red', fontSize: '14px'}
+    pub style: Option<String>,
+
+    // Normal HTML attributes
+    // OR
+    // Component props
+    // { foo: 'bar' }
+    pub attrs_or_props: Option<Vec<(String, String)>>,
+
+    // DOM properties
+    // domProps: { innerHTML: 'baz' }
+    pub dom_props: Option<Vec<(String, String)>>,
+
+    // Event handlers are nested under `on`, though
+    // modifiers such as in `v-on:keyup.enter` are not
+    // supported. You'll have to manually check the
+    // keyCode in the handler instead.
+    // { click: this.clickHandler }
+    pub on: Option<Vec<(String, String)>>,
+
+    // For components only. Allows you to listen to
+    // native events, rather than events emitted from
+    // the component using `vm.$emit`.
+    // nativeOn: { click: this.nativeClickHandler }
+    pub native_on: Option<Vec<(String, String)>>,
+
+    // Custom directives. Note that the `binding`'s
+    // `oldValue` cannot be set, as Vue keeps track
+    // of it for you.
+    pub directives: Option<Vec<JsTagArgsDirective>>,
+
+    // TODO
+    // Scoped slots in the form of
+    // { name: props => VNode | Array<VNode> }
+    // scopedSlots: {
+    //   default: props => createElement('span', props.text)
+    // },
+
+    // The name of the slot, if this component is the
+    // child of another component
+    pub slot: Option<String>, // "name-of-slot"
+
+    // Other special top-level properties
+    // "myKey"
+    pub key: Option<String>,
+    // ref = "myRef"
+    pub ref_: Option<String>,
+
+    // If you are applying the same ref name to multiple
+    // elements in the render function. This will make `$refs.myRef` become an array
+    // refInFor = true
+    pub ref_in_for: Option<bool>,
+}
+
+impl VueTagArgs {
+    fn new() -> Self {
+        Self {
+            modifier: None,
+            has_js_component_args: false,
+            class: None,
+            style: None,
+            attrs_or_props: None,
+            dom_props: None,
+            on: None,
+            native_on: None,
+            directives: None,
+            slot: None,
+            key: None,
+            ref_: None,
+            ref_in_for: None,
+        }
+    }
+
+    pub fn has_attr_or_prop(&self, name: &str) -> Option<&str> {
+        if let Some(attrs_or_props) = self.attrs_or_props.as_ref() {
+            for (key, js_value) in attrs_or_props {
+                if key == name {
+                    return Some(&js_value);
+                }
+            }
+        }
+        None
+    }
+
+    pub fn has_attr_or_prop_with_string(&self, name: &str) -> Option<String> {
+        let mut value = self.has_attr_or_prop(name)?.chars();
+
+        let quote = match value.next()? {
+            '\'' => '\'',
+            '"' => '"',
+            '`' => '`',
+            _ => return None,
+        };
+
+        let mut resp = String::new();
+        loop {
+            match value.next()? {
+                c if c == quote => break,
+                '\\' => resp.push(value.next()?),
+                c => resp.push(c),
+            }
+        }
+
+        Some(resp)
+    }
+
+    fn add(
+        &mut self,
+        kind: VueArgKind,
+        key: String,
+        value_as_js: String,
+    ) -> Result<(), ParserError> {
+        let set_has_js_component_args = match kind {
+            VueArgKind::Default | VueArgKind::Bind => {
+                match key.as_str() {
+                    "class" => self.class = Some(value_as_js),
+                    "style" => self.style = Some(value_as_js),
+                    "slot" => self.slot = Some(value_as_js),
+                    "key" => self.key = Some(value_as_js),
+                    "ref" => self.ref_ = Some(value_as_js),
+                    _ => add_or_set(&mut self.attrs_or_props, (key, value_as_js)),
+                };
+                true
+            }
+            VueArgKind::On => {
+                add_or_set(&mut self.on, (key, value_as_js));
+                true
+            }
+            VueArgKind::Text => {
+                todo!("Text");
+                true
+            }
+            VueArgKind::Html => {
+                todo!("Html");
+                true
+            }
+            VueArgKind::Show => {
+                todo!("Show");
+                true
+            }
+            VueArgKind::If => {
+                self.set_modifier(VueTagModifier::If(value_as_js))?;
+                false
+            }
+            VueArgKind::Else => {
+                self.set_modifier(VueTagModifier::Else)?;
+                false
+            }
+            VueArgKind::ElseIf => {
+                self.set_modifier(VueTagModifier::ElseIf(value_as_js))?;
+                false
+            }
+            VueArgKind::For => {
+                self.set_modifier(VueTagModifier::For(value_as_js))?;
+                false
+            }
+            VueArgKind::Model => {
+                todo!("Model");
+                true
+            }
+            VueArgKind::Slot => {
+                todo!("Slot");
+                true
+            }
+            VueArgKind::Pre => {
+                todo!("Pre");
+                true
+            }
+            VueArgKind::Cloak => {
+                todo!("Cloak");
+                true
+            }
+            VueArgKind::Once => {
+                todo!("Once");
+                true
+            }
+        };
+        if set_has_js_component_args {
+            self.has_js_component_args = true;
+        }
+        Ok(())
+    }
+    fn set_modifier(&mut self, to: VueTagModifier) -> Result<(), ParserError> {
+        if let Some(already_set_modifier) = self.modifier.as_ref() {
+            Err(ParserError::new(
+                "VueTagArgs::add",
+                format!(
+                    "cannot set {} on a tag that also has {}",
+                    to.kind(),
+                    already_set_modifier.kind()
+                ),
+            ))
+        } else {
+            self.modifier = Some(to);
+            Ok(())
+        }
+    }
+}
+
+pub enum VueArgKind {
+    Default,
+    Bind,
+    On,
+    Text,
+    Html,
+    Show,
+    If,
+    Else,
+    ElseIf,
+    For,
+    Model,
+    Slot,
+    Pre,
+    Cloak,
+    Once,
+}
+
+#[derive(Debug, Clone)]
+pub enum VueTagModifier {
+    For(String),
+    If(String),
+    ElseIf(String),
+    Else,
+}
+
+impl VueTagModifier {
+    fn kind(&self) -> &'static str {
+        match self {
+            Self::For(_) => "v-for",
+            Self::If(_) => "v-if",
+            Self::ElseIf(_) => "v-else-if",
+            Self::Else => "v-else",
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct JsTagArgsDirective {
+    pub name: String,                   // "my-custom-directive"
+    pub value: String,                  // "2"
+    pub expression: String,             // "1 + 1"
+    pub arg: String,                    // "foo",
+    pub modifiers: Vec<(String, bool)>, // { bar: true }
 }

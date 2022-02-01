@@ -111,7 +111,7 @@ pub fn compile_script_content(p: &mut Parser) -> Result<Option<SourceLocation>, 
             '<' => {
                 match p.must_seek_one()? {
                     '/' | 'a'..='z' | 'A'..='Z' | '0'..='9' => {
-                        match template::parse_tag(p) {
+                        match template::parse_tag(p, false) {
                             Err(e) => {
                                 if e.is_eof() {
                                     return Err(e);

@@ -1,6 +1,6 @@
 use super::super::utils::write_str;
 use super::super::{js, Parser};
-use super::{Child, VueTagArgs};
+use super::{Child, VueTagArgs, VueTagModifier};
 
 /*
 _c('div', [
@@ -35,14 +35,9 @@ pub fn template_to_js(p: &Parser, resp: &mut Vec<char>) {
             let child = template.content.get(0).unwrap();
             child_to_js(&child, p, resp);
         }
-        content_len => {
+        _ => {
             resp.push('[');
-            for (idx, child) in template.content.iter().enumerate() {
-                child_to_js(child, p, resp);
-                if idx + 1 != content_len {
-                    resp.push(',');
-                }
-            }
+            children_to_js(&template.content, p, resp);
             resp.push(']');
         }
     }
@@ -50,10 +45,59 @@ pub fn template_to_js(p: &Parser, resp: &mut Vec<char>) {
     resp.append(&mut "\n};".chars().collect())
 }
 
-pub fn child_to_js(child: &Child, p: &Parser, resp: &mut Vec<char>) {
+pub fn children_to_js(children: &Vec<Child>, p: &Parser, resp: &mut Vec<char>) {
+    let mut list_builder = CommaSeparatedEntries::new();
+    let mut children_iter = children.iter();
+    let mut inside_of_if = false;
+
+    while let Some(child) = children_iter.next() {
+        if !inside_of_if {
+            list_builder.add(resp);
+        } else if !child.is_v_else_or_else_if() {
+            write_str("_vm._e()", resp);
+            list_builder.add(resp);
+        }
+
+        let artifacts = child_to_js(child, p, resp);
+        inside_of_if = artifacts.opened_inline_if_else;
+    }
+
+    if inside_of_if {
+        write_str("_vm._e()", resp);
+    }
+}
+
+pub struct ChildToJsArtifacts {
+    pub opened_inline_if_else: bool,
+}
+
+pub fn child_to_js(child: &Child, p: &Parser, resp: &mut Vec<char>) -> ChildToJsArtifacts {
+    let mut artifacts = ChildToJsArtifacts {
+        opened_inline_if_else: false,
+    };
+
     // TODO support html escape
     match child {
         Child::Tag(tag, children) => {
+            if let Some(modifier) = tag.args.modifier.as_ref() {
+                match modifier {
+                    VueTagModifier::For(_) => {
+                        todo!("v-for not supported yet")
+                    }
+                    VueTagModifier::If(js_check) => {
+                        artifacts.opened_inline_if_else = true;
+                        write_str(js_check, resp);
+                        resp.push('?');
+                    }
+                    VueTagModifier::ElseIf(js_check) => {
+                        artifacts.opened_inline_if_else = true;
+                        write_str(js_check, resp);
+                        resp.push('?');
+                    }
+                    VueTagModifier::Else => {} // Do nothing
+                }
+            }
+
             // Writes:
             // _c('div', [_c(..), _c(..)])
             write_str("_c('", resp);
@@ -66,17 +110,12 @@ pub fn child_to_js(child: &Child, p: &Parser, resp: &mut Vec<char>) {
             }
 
             write_str(",[", resp);
-            let children_len = children.len();
-            if children_len != 0 {
-                let children_max_idx = children_len - 1;
-                for (idx, child) in children.iter().enumerate() {
-                    child_to_js(child, p, resp);
-                    if idx != children_max_idx {
-                        resp.push(',');
-                    }
-                }
-            }
+            children_to_js(children, p, resp);
             write_str("])", resp);
+
+            if artifacts.opened_inline_if_else {
+                resp.push(':');
+            }
         }
         Child::Text(location) => {
             // Writes:
@@ -99,7 +138,9 @@ pub fn child_to_js(child: &Child, p: &Parser, resp: &mut Vec<char>) {
             write_str(&js::add_vm_references(p, var, global_refs), resp);
             resp.push(')');
         }
-    }
+    };
+
+    artifacts
 }
 
 pub fn vue_tag_args_to_js(args: &VueTagArgs, dest: &mut Vec<char>, is_custom_component: bool) {

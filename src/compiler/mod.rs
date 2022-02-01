@@ -186,7 +186,7 @@ impl Parser {
     }
 
     fn parse_top_level_tag(&mut self) -> Result<(TopLevelTag, template::Tag), ParserError> {
-        let parsed_tag = template::parse_tag(self)?;
+        let parsed_tag = template::parse_tag(self, false)?;
         if let TagType::DocType = parsed_tag.type_ {
             return Ok((TopLevelTag::DocType, parsed_tag));
         }
