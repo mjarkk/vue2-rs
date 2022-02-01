@@ -264,6 +264,7 @@ mod tests {
     }
 
     mod template_to_render_method {
+        use super::super::super::template::to_js::child_to_js;
         use super::*;
 
         fn template_to_js_eq(html: &str, eq: &str) {
@@ -279,7 +280,7 @@ mod tests {
                 .iter()
                 .map(|child| {
                     let mut resp: Vec<char> = Vec::new();
-                    child.to_js(&result, &mut resp);
+                    child_to_js(child, &result, &mut resp);
                     resp.iter().collect::<String>()
                 })
                 .collect();

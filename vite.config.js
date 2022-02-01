@@ -59,6 +59,7 @@ export default defineConfig({
     clearScreen: false,
     plugins: [
         Inspect(),
+        // vuePlugin,
         vuePluginProxy,
     ]
 })

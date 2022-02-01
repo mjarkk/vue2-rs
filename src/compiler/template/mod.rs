@@ -1,3 +1,5 @@
+pub mod to_js;
+
 use super::utils::{is_space, write_str};
 use super::{js, Parser, ParserError, QuoteKind, SourceLocation, TagType};
 
@@ -7,7 +9,7 @@ pub fn parse_tag(p: &mut Parser) -> Result<Tag, ParserError> {
     let mut tag = Tag {
         type_: TagType::Open,
         name: SourceLocation(p.current_char, 0),
-        args: JsTagArgs::new(),
+        args: VueTagArgs::new(),
     };
 
     let mut is_close_tag = false;
@@ -42,7 +44,7 @@ pub fn parse_tag(p: &mut Parser) -> Result<Tag, ParserError> {
         return Ok(Tag {
             type_: TagType::DocType,
             name: SourceLocation::empty(),
-            args: JsTagArgs::new(),
+            args: VueTagArgs::new(),
         });
     }
 
@@ -113,7 +115,7 @@ fn add_or_set<T>(list: &mut Option<Vec<T>>, add: T) {
 fn try_parse_arg(
     p: &mut Parser,
     mut c: char,
-    result_args: &mut JsTagArgs,
+    result_args: &mut VueTagArgs,
 ) -> Result<Option<char>, ParserError> {
     let mut is_v_on_shotcut = false;
     let mut is_v_bind_shotcut = false;
@@ -461,58 +463,6 @@ impl Child {
             global_vars,
         ))
     }
-
-    pub fn to_js(&self, p: &Parser, resp: &mut Vec<char>) {
-        // TODO support html escape
-        match self {
-            Self::Tag(tag, children) => {
-                // Writes:
-                // _c('div', [_c(..), _c(..)])
-                write_str("_c('", resp);
-                tag.name.write_to_vec_escape(p, resp, '\'', '\\');
-                resp.push('\'');
-                if tag.args.has_js_component_args {
-                    let is_custom_component = tag.is_custom_component(p);
-                    resp.push(',');
-                    tag.args.to_js(resp, is_custom_component);
-                }
-
-                write_str(",[", resp);
-                let children_len = children.len();
-                if children_len != 0 {
-                    let children_max_idx = children_len - 1;
-                    for (idx, child) in children.iter().enumerate() {
-                        child.to_js(p, resp);
-                        if idx != children_max_idx {
-                            resp.push(',');
-                        }
-                    }
-                }
-                write_str("])", resp);
-            }
-            Self::Text(location) => {
-                // Writes:
-                // _vm._v("foo bar")
-                write_str("_vm._v(\"", resp);
-                for c in location.chars(p).iter() {
-                    match *c {
-                        '\\' | '"' => {
-                            // Add escape characters
-                            resp.push('\\');
-                            resp.push(*c);
-                        }
-                        c => resp.push(c),
-                    }
-                }
-                write_str("\")", resp);
-            }
-            Self::Var(var, global_refs) => {
-                write_str("_vm._s(", resp);
-                write_str(&js::add_vm_references(p, var, global_refs), resp);
-                resp.push(')');
-            }
-        }
-    }
 }
 
 enum CompileAfterTextNode {
@@ -520,57 +470,18 @@ enum CompileAfterTextNode {
     Var,
 }
 
-const DEFAULT_CONF: &'static str = "
-__vue_2_file_default_export__.render = c => {
-    const _vm = this;
-    const _h = _vm.$createElement;
-    const _c = _vm._self._c || _h;
-    return ";
-
-/*
-_c('div', [
-    _c('h1', [
-        _vm._v(\"It wurks \" + _vm._s(_vm.count) + \" !\")
-    ]),
-    _c('button', { on: { \"click\": $event => { _vm.count++ } } }, [_vm._v(\"+\")]),
-    _c('button', { on: { \"click\": $event => { _vm.count-- } } }, [_vm._v(\"-\")]),
-])
-*/
-
-pub fn convert_template_to_js_render_fn(p: &Parser, resp: &mut Vec<char>) {
-    let template = match p.template.as_ref() {
-        Some(t) => t,
-        None => return,
-    };
-
-    resp.append(&mut DEFAULT_CONF.chars().collect());
-
-    match template.content.len() {
-        0 => {
-            write_str("[]", resp);
-        }
-        1 => {
-            template.content.get(0).unwrap().to_js(p, resp);
-        }
-        content_len => {
-            resp.push('[');
-            for (idx, child) in template.content.iter().enumerate() {
-                child.to_js(p, resp);
-                if idx + 1 != content_len {
-                    resp.push(',');
-                }
-            }
-            resp.push(']');
-        }
-    }
-
-    resp.append(&mut "\n};".chars().collect())
+#[derive(Debug, Clone)]
+pub enum VueTagModifiers {
+    For(String),
+    If(String),
+    ElseIf(String),
+    Else,
 }
 
 // https://vuejs.org/v2/guide/render-function.html
 // This is a somewhat rust representation of the vue component render arguments
 #[derive(Debug, Clone)]
-pub struct JsTagArgs {
+pub struct VueTagArgs {
     pub has_js_component_args: bool,
 
     // Same API as `v-bind:class`, accepting either
@@ -634,7 +545,7 @@ pub struct JsTagArgs {
     pub ref_in_for: Option<bool>,
 }
 
-impl JsTagArgs {
+impl VueTagArgs {
     fn new() -> Self {
         Self {
             has_js_component_args: false,
@@ -752,110 +663,24 @@ impl JsTagArgs {
             }
         }
     }
-
-    fn to_js(&self, dest: &mut Vec<char>, is_custom_component: bool) {
-        dest.push('{');
-        let mut object_entries = CommaSeperatedEntries::new();
-
-        if let Some(class) = self.class.as_ref() {
-            object_entries.add(dest);
-            write_str("class:", dest);
-            write_str(&class, dest);
-        }
-
-        if let Some(style) = self.style.as_ref() {
-            object_entries.add(dest);
-            write_str("style:", dest);
-            write_str(&style, dest);
-        }
-
-        if let Some(attrs) = self.attrs_or_props.as_ref() {
-            object_entries.add(dest);
-            if is_custom_component {
-                write_str("props:{", dest);
-            } else {
-                write_str("attrs:{", dest);
-            }
-            let mut attrs_entries = CommaSeperatedEntries::new();
-
-            for (key, value) in attrs {
-                attrs_entries.add(dest);
-
-                dest.push('"');
-                write_str(&js::escape_quotes(key, '"'), dest);
-                write_str("\":", dest);
-
-                for c in value.chars() {
-                    dest.push(c);
-                }
-            }
-
-            dest.push('}');
-        }
-
-        // TODO: dom_props // Option<Vec<(SourceLocation, SourceLocation)>>,
-
-        if let Some(on) = self.on.as_ref() {
-            object_entries.add(dest);
-            write_str("on:{", dest);
-            let mut on_entries = CommaSeperatedEntries::new();
-
-            for (key, value) in on {
-                on_entries.add(dest);
-
-                dest.push('"');
-                write_str(&js::escape_quotes(key, '"'), dest);
-                write_str("\":$event=>{", dest);
-
-                for c in value.chars() {
-                    dest.push(c);
-                }
-
-                dest.push('}');
-            }
-
-            dest.push('}');
-        }
-
-        // TODO: native_on // Option<Vec<(SourceLocation, SourceLocation)>>,
-        // TODO: directives // Option<Vec<JsTagArgsDirective>>,
-
-        if let Some(slot) = self.slot.as_ref() {
-            object_entries.add(dest);
-            write_str("slot:", dest);
-            write_str(&slot, dest);
-        }
-
-        if let Some(key) = self.key.as_ref() {
-            object_entries.add(dest);
-            write_str("key:", dest);
-            write_str(&key, dest);
-        }
-
-        if let Some(ref_) = self.ref_.as_ref() {
-            object_entries.add(dest);
-            write_str("ref:", dest);
-            write_str(&ref_, dest);
-        }
-
-        // TODO: ref_in_for // Option<bool>,
-        dest.push('}');
-    }
 }
 
-struct CommaSeperatedEntries(bool);
-
-impl CommaSeperatedEntries {
-    fn new() -> Self {
-        Self(false)
-    }
-    fn add(&mut self, dest: &mut Vec<char>) {
-        if self.0 {
-            dest.push(',');
-        } else {
-            self.0 = true;
-        }
-    }
+pub enum VueArgKind {
+    Default,
+    Bind,
+    On,
+    Text,
+    Html,
+    Show,
+    If,
+    Else,
+    ElseIf,
+    For,
+    Model,
+    Slot,
+    Pre,
+    Cloak,
+    Once,
 }
 
 #[derive(Debug, Clone)]
@@ -871,7 +696,7 @@ pub struct JsTagArgsDirective {
 pub struct Tag {
     pub type_: TagType,
     pub name: SourceLocation,
-    pub args: JsTagArgs,
+    pub args: VueTagArgs,
 }
 
 impl Tag {
@@ -1007,22 +832,4 @@ impl Tag {
 
         self.name.eq_some(parser, false, html_elements).is_none()
     }
-}
-
-pub enum VueArgKind {
-    Default,
-    Bind,
-    On,
-    Text,
-    Html,
-    Show,
-    If,
-    Else,
-    ElseIf,
-    For,
-    Model,
-    Slot,
-    Pre,
-    Cloak,
-    Once,
 }

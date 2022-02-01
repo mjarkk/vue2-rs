@@ -1,7 +1,9 @@
 <template>
   <div>
     <h1>It wurks {{ count }}!</h1>
-    <div v-once>Static {{ count }}!</div>
+    <div v-if="count">If {{ count }}!</div>
+    <div v-else>Else {{ count }}</div>
+    <div v-if="!count">Another else</div>
     <button v-on:click="count++">+</button>
     <button @click="count--">-</button>
   </div>

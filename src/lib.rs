@@ -1,9 +1,7 @@
 mod compiler;
 mod utils;
 
-use compiler::{
-    error::ParserError, template::convert_template_to_js_render_fn, Parser, SourceLocation,
-};
+use compiler::{error::ParserError, template::to_js::template_to_js, Parser, SourceLocation};
 // use utils::set_panic_hook;
 
 use wasm_bindgen::prelude::*;
@@ -86,7 +84,7 @@ fn transform_main(code: &str, _id: &str) -> Result<String, ParserError> {
             .collect()
     };
 
-    convert_template_to_js_render_fn(&parsed_code, &mut resp);
+    template_to_js(&parsed_code, &mut resp);
     resp.append(
         &mut "\nexport default __vue_2_file_default_export__;"
             .chars()
