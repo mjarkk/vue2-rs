@@ -160,8 +160,11 @@ fn try_parse_arg(
     key_location.1 = p.current_char - 1;
     let is_vue_dash_arg = key_location.starts_with(p, "v-".chars());
     let is_vue_arg = is_vue_dash_arg || is_v_on_shotcut || is_v_bind_shotcut;
+    let mut key = key_location.string(p);
 
     if is_vue_arg {
+        // parse vue specific tag
+
         let value: String = if has_value {
             let closure = p.must_read_one()?;
             match closure {
@@ -196,14 +199,11 @@ fn try_parse_arg(
             if !has_value {
                 return Err(ParserError::new(
                     "try_parse_arg",
-                    format!(
-                        "expected an argument value for \"@{}\"",
-                        key_location.string(p)
-                    ),
+                    format!("expected an argument value for \"@{}\"", key),
                 ));
             }
 
-            result_args.add(VueArgKind::On, key_location.string(p), value)?;
+            result_args.add(VueArgKind::On, key, value)?;
             return Ok(Some(c));
         }
 
@@ -217,91 +217,77 @@ fn try_parse_arg(
             if !has_value {
                 return Err(ParserError::new(
                     "try_parse_arg",
-                    format!(
-                        "expected an argument value for \":{}\"",
-                        key_location.string(p)
-                    ),
+                    format!("expected an argument value for \":{}\"", key),
                 ));
             }
 
-            result_args.add(VueArgKind::Bind, key_location.string(p), value)?;
+            result_args.add(VueArgKind::Bind, key, value)?;
             return Ok(Some(c));
         }
 
-        // parse vue specific tag
-        key_location.0 += 2;
+        // remove the v- from the argument
+        key.replace_range(..2, "");
 
-        let vue_directives: &[(&'static str, bool, fn() -> VueArgKind)] = &[
-            ("if", true, || VueArgKind::If),
-            ("for", true, || VueArgKind::For),
-            ("pre", true, || VueArgKind::Pre),
-            ("else", false, || VueArgKind::Else),
-            ("slot", true, || VueArgKind::Slot),
-            ("text", true, || VueArgKind::Text),
-            ("html", true, || VueArgKind::Html),
-            ("show", true, || VueArgKind::Show),
-            ("once", false, || VueArgKind::Once),
-            ("model", true, || VueArgKind::Model),
-            ("cloak", true, || VueArgKind::Cloak),
-            ("else-if", true, || VueArgKind::ElseIf),
-            ("bind", true, || VueArgKind::Bind),
-            ("on", true, || VueArgKind::On),
-        ];
-
-        let mut vue_directives_match_input = Vec::with_capacity(vue_directives.len());
-        for e in vue_directives.iter() {
-            vue_directives_match_input.push(e.0.chars());
-        }
-
-        if let Some(idx) = key_location.eq_some(p, true, vue_directives_match_input) {
-            let (key, expects_argument, arg_kind) = vue_directives[idx];
-
-            if has_value != expects_argument {
-                Err(ParserError::new(
+        let (expects_argument, arg_kind) = match key.as_str() {
+            "if" => (true, VueArgKind::If),
+            "for" => (true, VueArgKind::For),
+            "pre" => (true, VueArgKind::Pre),
+            "else" => (false, VueArgKind::Else),
+            "slot" => (true, VueArgKind::Slot),
+            key if key.starts_with("slot") => (true, VueArgKind::Slot),
+            "text" => (true, VueArgKind::Text),
+            "html" => (true, VueArgKind::Html),
+            "show" => (true, VueArgKind::Show),
+            "once" => (false, VueArgKind::Once),
+            "model" => (true, VueArgKind::Model),
+            key if key.starts_with("model") => (true, VueArgKind::Model),
+            "cloak" => (true, VueArgKind::Cloak),
+            "else-if" => (true, VueArgKind::ElseIf),
+            "bind" => (true, VueArgKind::Bind),
+            key if key.starts_with("bind:") => (true, VueArgKind::Bind),
+            "on" => (true, VueArgKind::On),
+            key if key.starts_with("on") => (true, VueArgKind::On),
+            _ => {
+                return Err(ParserError::new(
                     "try_parse_arg",
-                    if expects_argument {
-                        format!("expected an argument value for \"v-{}\"", key)
-                    } else {
-                        format!("expected no argument value for \"v-{}\"", key)
-                    },
-                ))
-            } else {
-                key_location.0 += key.len();
-                if p.source_chars[key_location.0] == ':' {
-                    key_location.0 += 1;
-                }
-
-                let arg_kind = arg_kind();
-
-                if !v_else_allowed {
-                    match arg_kind {
-                        VueArgKind::ElseIf => {
-                            return Err(ParserError::new(
-                                "try_parse_arg",
-                                "cannot use v-else-if here",
-                            ));
-                        }
-                        VueArgKind::Else => {
-                            return Err(ParserError::new(
-                                "try_parse_arg",
-                                "cannot use v-else here",
-                            ));
-                        }
-                        _ => {}
-                    }
-                }
-
-                result_args.add(arg_kind, key_location.string(p), value)?;
-
-                Ok(Some(c))
+                    format!("unknown vue argument \"v-{}\"", key),
+                ));
             }
-        } else {
-            key_location.0 -= 2;
-            Err(ParserError::new(
+        };
+
+        if has_value != expects_argument {
+            return Err(ParserError::new(
                 "try_parse_arg",
-                format!("unknown vue argument \"{}\"", key_location.string(p)),
-            ))
+                if expects_argument {
+                    format!("expected an argument value for \"v-{}\"", key)
+                } else {
+                    format!("expected no argument value for \"v-{}\"", key)
+                },
+            ));
         }
+
+        key = match key.split_once(':') {
+            Some((_, after)) => after.to_string(),
+            None => String::new(),
+        };
+
+        if !v_else_allowed {
+            match arg_kind {
+                VueArgKind::ElseIf => {
+                    return Err(ParserError::new(
+                        "try_parse_arg",
+                        "cannot use v-else-if here",
+                    ));
+                }
+                VueArgKind::Else => {
+                    return Err(ParserError::new("try_parse_arg", "cannot use v-else here"));
+                }
+                _ => {}
+            }
+        }
+
+        result_args.add(arg_kind, key, value)?;
+        Ok(Some(c))
     } else {
         let value_as_js: String = if has_value {
             // Parse a static argument

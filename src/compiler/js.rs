@@ -247,6 +247,8 @@ fn parse_potential_var(
             "export".chars(),
             "extends".chars(),
             "import".chars(),
+            // Extra
+            "undefined".chars(),
         ],
     );
 

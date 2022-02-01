@@ -378,6 +378,62 @@ mod tests {
                     "_vm.value?_c('h1',[_vm._v(\"WHAA\")]):_vm._e()",
                 );
             }
+
+            #[test]
+            fn v_if_else() {
+                template_to_js_eq(
+                    "<div>
+                        <h1 v-if='value'>True</h1>
+                        <h1 v-else>False</h1>
+                    </div>",
+                    "_c('div',[_vm.value?_c('h1',[_vm._v(\"True\")]):_c('h1',[_vm._v(\"False\")])])",
+                );
+            }
+
+            #[test]
+            fn v_if_else_if() {
+                template_to_js_eq(
+                    "<div>
+                        <h1 v-if='value === undefined'>Undefined</h1>
+                        <h1 v-else-if='value === true'>True</h1>
+                        <h1 v-else-if='value === false'>False</h1>
+                    </div>",
+                    concat!(
+                        "_c('div',[",
+                        "_vm.value === undefined",
+                        "?_c('h1',[_vm._v(\"Undefined\")])",
+                        ":_vm.value === true",
+                        "?_c('h1',[_vm._v(\"True\")])",
+                        ":_vm.value === false",
+                        "?_c('h1',[_vm._v(\"False\")])",
+                        ":_vm._e()",
+                        "])",
+                    ),
+                );
+            }
+
+            #[test]
+            fn v_if_else_if_else() {
+                template_to_js_eq(
+                    "<div>
+                        <h1 v-if='value === undefined'>Undefined</h1>
+                        <h1 v-else-if='value === true'>True</h1>
+                        <h1 v-else-if='value === false'>False</h1>
+                        <h1 v-else>Unknown</h1>
+                    </div>",
+                    concat!(
+                        "_c('div',[",
+                        "_vm.value === undefined",
+                        "?_c('h1',[_vm._v(\"Undefined\")])",
+                        ":_vm.value === true",
+                        "?_c('h1',[_vm._v(\"True\")])",
+                        ":_vm.value === false",
+                        "?_c('h1',[_vm._v(\"False\")])",
+                        ":_c('h1',[_vm._v(\"Unknown\")])",
+                        "])",
+                    ),
+                );
+            }
         }
     }
 
