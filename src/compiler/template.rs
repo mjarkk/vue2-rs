@@ -474,7 +474,7 @@ impl Child {
                 if tag.args.has_js_component_args {
                     let is_custom_component = tag.is_custom_component(p);
                     resp.push(',');
-                    tag.args.to_js(p, resp, is_custom_component);
+                    tag.args.to_js(resp, is_custom_component);
                 }
 
                 write_str(",[", resp);
@@ -652,7 +652,7 @@ impl JsTagArgs {
         }
     }
 
-    pub fn has_attr_or_prop(&self, p: &Parser, name: &str) -> Option<&str> {
+    pub fn has_attr_or_prop(&self, name: &str) -> Option<&str> {
         if let Some(attrs_or_props) = self.attrs_or_props.as_ref() {
             for (key, js_value) in attrs_or_props {
                 if key == name {
@@ -663,8 +663,8 @@ impl JsTagArgs {
         None
     }
 
-    pub fn has_attr_or_prop_with_string(&self, p: &Parser, name: &str) -> Option<String> {
-        let mut value = self.has_attr_or_prop(p, name)?.chars();
+    pub fn has_attr_or_prop_with_string(&self, name: &str) -> Option<String> {
+        let mut value = self.has_attr_or_prop(name)?.chars();
 
         let quote = match value.next()? {
             '\'' => '\'',
@@ -753,7 +753,7 @@ impl JsTagArgs {
         }
     }
 
-    fn to_js(&self, p: &Parser, dest: &mut Vec<char>, is_custom_component: bool) {
+    fn to_js(&self, dest: &mut Vec<char>, is_custom_component: bool) {
         dest.push('{');
         let mut object_entries = CommaSeperatedEntries::new();
 

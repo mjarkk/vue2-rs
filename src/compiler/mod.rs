@@ -109,7 +109,7 @@ impl Parser {
                         TagType::Open => {},
                     };
 
-                    let lang: Option<String> = top_level_tag.1.args.has_attr_or_prop_with_string(self, "lang");
+                    let lang: Option<String> = top_level_tag.1.args.has_attr_or_prop_with_string("lang");
 
                     match top_level_tag.0 {
                         TopLevelTag::DocType => continue,
@@ -143,7 +143,7 @@ impl Parser {
                             let style_start = self.current_char;
                             let SourceLocation(style_end, _) = self.look_for("</style>".chars().collect())?;
 
-                            let scoped = match top_level_tag.1.args.has_attr_or_prop(self, "scoped") {
+                            let scoped = match top_level_tag.1.args.has_attr_or_prop("scoped") {
                                 Some("true") => true,
                                 _ => false,
                             };
@@ -210,33 +210,6 @@ impl Parser {
         Ok((top_level_tag, parsed_tag))
     }
 
-    fn parse_name(
-        &mut self,
-        first_char: Option<char>,
-        no_name_err: String,
-    ) -> Result<(SourceLocation, char), ParserError> {
-        let mut start = self.current_char;
-
-        let c = match first_char {
-            Some(c) => {
-                start -= 1;
-                c
-            }
-            None => self.must_read_one()?,
-        };
-        match c {
-            'a'..='z' | 'A'..='Z' | '0'..='9' | '_' => {} // do nothing
-            _ => return Err(ParserError::new("parse_name", no_name_err)),
-        }
-
-        loop {
-            match self.must_read_one()? {
-                'a'..='z' | 'A'..='Z' | '0'..='9' | '_' => {}
-                c => return Ok((SourceLocation(start, self.current_char - 1), c)),
-            }
-        }
-    }
-
     fn parse_quotes(
         &mut self,
         kind: QuoteKind,
@@ -289,10 +262,6 @@ impl SourceLocation {
     fn empty() -> Self {
         SourceLocation(0, 0)
     }
-    pub fn offset_start(mut self, offset: isize) -> Self {
-        self.0 = ((self.0 as isize) + offset) as usize;
-        self
-    }
     pub fn chars<'a>(&self, parser: &'a Parser) -> &'a [char] {
         if self.is_empty() {
             &[]
@@ -305,11 +274,6 @@ impl SourceLocation {
             parser.source_chars[self.0..self.1].into()
         } else {
             Vec::new()
-        }
-    }
-    pub fn write_to_vec(&self, parser: &Parser, dest: &mut Vec<char>) {
-        for c in self.chars(parser) {
-            dest.push(*c);
         }
     }
     pub fn write_to_vec_escape(
