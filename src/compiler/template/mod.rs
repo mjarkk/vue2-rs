@@ -113,6 +113,9 @@ fn add_or_set<T>(list: &mut Option<Vec<T>>, add: T) {
 #[derive(Debug, Clone)]
 struct ParsedVFor {
     value: String,
+    key: Option<String>,
+    index: Option<String>,
+    list: String,
 }
 
 fn parse_v_for_value(p: &mut Parser) -> Result<ParsedVFor, ParserError> {
@@ -164,11 +167,40 @@ fn parse_v_for_value(p: &mut Parser) -> Result<ParsedVFor, ParserError> {
 
     let mut result = ParsedVFor {
         value: value_location.string(p),
+        key: None,
+        index: None,
+        list: String::new(),
     };
 
     if !is_single {
         if c == ',' {
-            todo!("parse key and value");
+            // Read the key
+            // `v-for"(value, key) in list"`
+            //                ^- That one
+            p.must_read_one_skip_spacing()?;
+
+            let (next_c, key_location) = js::parse_name(p)?;
+            c = next_c;
+            result.key = Some(key_location.string(p));
+
+            if is_space(c) {
+                c = p.must_read_one_skip_spacing()?;
+            }
+
+            if c == ',' {
+                // Read the index
+                // `v-for"(value, key, index) in object"`
+                //                     ^- That one
+                p.must_read_one_skip_spacing()?;
+
+                let (next_c, index_location) = js::parse_name(p)?;
+                c = next_c;
+                result.index = Some(index_location.string(p));
+
+                if is_space(c) {
+                    c = p.must_read_one_skip_spacing()?;
+                }
+            }
         }
 
         if c != ')' {
@@ -212,7 +244,8 @@ fn parse_v_for_value(p: &mut Parser) -> Result<ParsedVFor, ParserError> {
 
     let start = p.current_char;
     let replacements = js::parse_template_arg(p, closure)?;
-    let sl = SourceLocation(start, p.current_char - 1);
+    let list_location = SourceLocation(start, p.current_char - 1);
+    result.list = js::add_vm_references(p, &list_location, &replacements);
 
     Ok(result)
 }
@@ -225,18 +258,18 @@ fn try_parse_arg(
     result_args: &mut VueTagArgs,
     v_else_allowed: bool,
 ) -> Result<Option<char>, ParserError> {
-    let mut is_v_on_shotcut = false;
-    let mut is_v_bind_shotcut = false;
+    let mut is_v_on_shortcut = false;
+    let mut is_v_bind_shortcut = false;
 
     let mut key_location = SourceLocation(p.current_char - 1, 0);
 
     match c {
         '@' => {
-            is_v_on_shotcut = true;
+            is_v_on_shortcut = true;
             key_location.0 += 1;
         }
         ':' => {
-            is_v_bind_shotcut = true;
+            is_v_bind_shortcut = true;
             key_location.0 += 1;
         }
         'a'..='z' | 'A'..='Z' | '0'..='9' | '_' => {}
@@ -266,7 +299,7 @@ fn try_parse_arg(
     }
     key_location.1 = p.current_char - 1;
     let is_vue_dash_arg = key_location.starts_with(p, "v-".chars());
-    let is_vue_arg = is_vue_dash_arg || is_v_on_shotcut || is_v_bind_shotcut;
+    let is_vue_arg = is_vue_dash_arg || is_v_on_shortcut || is_v_bind_shortcut;
     let mut key = key_location.string(p);
 
     if is_vue_arg {
@@ -282,7 +315,7 @@ fn try_parse_arg(
             }
 
             let result = parse_v_for_value(p)?;
-            result_args.set_modifier(VueTagModifier::For(result));
+            result_args.set_modifier(VueTagModifier::For(result))?;
 
             c = p.must_read_one()?;
             return Ok(Some(c));
@@ -312,7 +345,7 @@ fn try_parse_arg(
             String::from("undefined")
         };
 
-        if is_v_on_shotcut {
+        if is_v_on_shortcut {
             if is_vue_dash_arg {
                 return Err(ParserError::new(
                     "try_parse_arg",
@@ -330,7 +363,7 @@ fn try_parse_arg(
             return Ok(Some(c));
         }
 
-        if is_v_bind_shotcut {
+        if is_v_bind_shortcut {
             if is_vue_dash_arg {
                 return Err(ParserError::new(
                     "try_parse_arg",
