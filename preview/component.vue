@@ -7,6 +7,7 @@
     <div v-text="'abc'" />
     <div v-html="'abc'" />
     <div v-show="false" />
+    <div><span v-for="(key, index) in list" :key="key">{{ key }} #{{index}} </span></div>
     <button v-on:click="count++">+</button>
     <button @click="count--">-</button>
   </div>
@@ -17,6 +18,7 @@ import { defineComponent } from "@vue/composition-api";
 
 export default defineComponent({
   data: () => ({
+    list: ['a', 'b'],
     count: 1,
   }),
 });

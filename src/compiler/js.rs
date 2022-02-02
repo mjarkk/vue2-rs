@@ -322,7 +322,7 @@ fn parse_potential_var(
     }
 }
 
-fn parse_name(p: &mut Parser) -> Result<(char, SourceLocation), ParserError> {
+pub fn parse_name(p: &mut Parser) -> Result<(char, SourceLocation), ParserError> {
     let start = p.current_char - 1;
 
     loop {
