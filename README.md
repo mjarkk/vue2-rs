@@ -36,6 +36,7 @@ This is a project that is in progress
         - [ ] `v-model`
         - [ ] `v-cloak`
         - [ ] Custom (`v-custom-directive`)
+    - [ ] Support for `<template>` element
     - [ ] Pug support?
 - [ ] Script
   - [x] Basic start and end detection (`<script>..</script>`)

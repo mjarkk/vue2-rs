@@ -651,6 +651,17 @@ impl Child {
         }
         false
     }
+
+    pub fn is_v_for(&self) -> bool {
+        if let Child::Tag(tag, _) = self {
+            if let Some(modifier) = tag.args.modifier.as_ref() {
+                if let VueTagModifier::For(_) = modifier {
+                    return true;
+                }
+            }
+        }
+        false
+    }
 }
 
 enum CompileAfterTextNode {

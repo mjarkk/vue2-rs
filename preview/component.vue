@@ -6,8 +6,10 @@
     <div v-if="!count">Another else</div>
     <div v-text="'abc'" />
     <div v-html="'abc'" />
-    <div v-show="false" />
-    <div><span v-for="(key, index) in list" :key="key">{{ key }} #{{index}} </span></div>
+    <div v-show="false"><div /></div>
+    <div foo=bar>
+      <span v-for="(key, index) in list" :key="key"> {{ key }} #{{index}}</span>
+    </div>
     <button v-on:click="count++">+</button>
     <button @click="count--">-</button>
   </div>

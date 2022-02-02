@@ -44,10 +44,20 @@ pub fn template_to_js(p: &Parser, resp: &mut Vec<char>) {
     resp.append(&mut "\n};".chars().collect())
 }
 
-pub fn children_to_js(children: &Vec<Child>, p: &Parser, resp: &mut Vec<char>) {
+pub struct AddChildrenResult {
+    pub add_magic_number: Option<u8>,
+}
+
+pub fn children_to_js(
+    children: &Vec<Child>,
+    p: &Parser,
+    resp: &mut Vec<char>,
+) -> AddChildrenResult {
     let mut list_builder = CommaSeparatedEntries::new();
     let mut children_iter = children.iter();
     let mut inside_of_if = false;
+
+    let mut add_magic_number: Option<u8> = None;
 
     while let Some(child) = children_iter.next() {
         if !inside_of_if {
@@ -59,21 +69,38 @@ pub fn children_to_js(children: &Vec<Child>, p: &Parser, resp: &mut Vec<char>) {
 
         let artifacts = child_to_js(child, p, resp);
         inside_of_if = artifacts.opened_inline_if_else;
+        if artifacts.is_v_for {
+            add_magic_number = Some(if children.len() > 1 {
+                2
+            } else {
+                if artifacts.is_custom_component {
+                    1
+                } else {
+                    0
+                }
+            })
+        }
     }
 
     if inside_of_if {
         write_str("_vm._e()", resp);
     }
+
+    AddChildrenResult { add_magic_number }
 }
 
 #[derive(Debug)]
 pub struct ChildToJsArtifacts {
     pub opened_inline_if_else: bool,
+    pub is_v_for: bool,
+    pub is_custom_component: bool,
 }
 
 pub fn child_to_js(child: &Child, p: &Parser, resp: &mut Vec<char>) -> ChildToJsArtifacts {
     let mut artifacts = ChildToJsArtifacts {
         opened_inline_if_else: false,
+        is_v_for: false,
+        is_custom_component: false,
     };
 
     // TODO support html escape
@@ -81,8 +108,21 @@ pub fn child_to_js(child: &Child, p: &Parser, resp: &mut Vec<char>) -> ChildToJs
         Child::Tag(tag, children) => {
             if let Some(modifier) = tag.args.modifier.as_ref() {
                 match modifier {
-                    VueTagModifier::For(_) => {
-                        todo!("v-for not supported yet")
+                    VueTagModifier::For(for_args) => {
+                        artifacts.is_v_for = true;
+                        write_str("_vm._l((", resp);
+                        write_str(&for_args.list, resp);
+                        write_str("),(", resp);
+                        write_str(&for_args.value, resp);
+                        if let Some(key) = for_args.key.as_ref() {
+                            resp.push(',');
+                            write_str(key, resp);
+                            if let Some(index) = for_args.index.as_ref() {
+                                resp.push(',');
+                                write_str(index, resp);
+                            }
+                        }
+                        write_str(")=>", resp);
                     }
                     VueTagModifier::If(js_check) => {
                         artifacts.opened_inline_if_else = true;
@@ -103,18 +143,34 @@ pub fn child_to_js(child: &Child, p: &Parser, resp: &mut Vec<char>) -> ChildToJs
             write_str("_c('", resp);
             tag.name.write_to_vec_escape(p, resp, '\'', '\\');
             resp.push('\'');
+            artifacts.is_custom_component = tag.is_custom_component(p);
             if tag.args.has_js_component_args {
-                let is_custom_component = tag.is_custom_component(p);
                 resp.push(',');
-                vue_tag_args_to_js(&tag.args, resp, is_custom_component);
+                vue_tag_args_to_js(&tag.args, resp, artifacts.is_custom_component);
             }
 
-            write_str(",[", resp);
-            children_to_js(children, p, resp);
-            write_str("])", resp);
+            resp.push(',');
+            let result = if children.len() == 1 && children.get(0).unwrap().is_v_for() {
+                children_to_js(children, p, resp)
+            } else {
+                resp.push('[');
+                let result = children_to_js(children, p, resp);
+                resp.push(']');
+                result
+            };
+
+            if let Some(magic_number) = result.add_magic_number {
+                // When using v-for a magic number is added
+                // TODO: find out what this magic number exacly is
+                resp.push(',');
+                write_str(&magic_number.to_string(), resp);
+            }
+            write_str(")", resp);
 
             if artifacts.opened_inline_if_else {
                 resp.push(':');
+            } else if artifacts.is_v_for {
+                resp.push(')');
             }
         }
         Child::Text(location) => {
