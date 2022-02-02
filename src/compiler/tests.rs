@@ -15,14 +15,9 @@ mod tests {
             v => panic!("{:?}", v),
         }
     }
-    fn unwrap_var_child(
-        children: &Vec<Child>,
-        idx: usize,
-    ) -> (SourceLocation, Vec<SourceLocation>) {
+    fn unwrap_var_child(children: &Vec<Child>, idx: usize) -> String {
         match children.get(idx).unwrap() {
-            Child::Var(source_location, global_vars) => {
-                (source_location.clone(), global_vars.clone())
-            }
+            Child::Var(var) => var.clone(),
             v => panic!("{:?}", v),
         }
     }
@@ -206,14 +201,12 @@ mod tests {
         let (_, inner_p_children) = unwrap_element_child(&children, 1);
         let def = unwrap_text_child(&result, &inner_p_children, 0);
         let ghi = unwrap_text_child(&result, &children, 2);
-        let (jkl_var, jkl_var_global_refs) = unwrap_var_child(&children, 3);
+        let jkl_var = unwrap_var_child(&children, 3);
 
         assert_eq!(abc.trim(), "abc");
         assert_eq!(def, "def");
         assert_eq!(ghi.trim(), "ghi");
-        assert_eq!(jkl_var.string(&result), " jkl ");
-        assert_eq!(jkl_var_global_refs.len(), 1);
-        assert_eq!(jkl_var_global_refs.get(0).unwrap().string(&result), "jkl");
+        assert_eq!(jkl_var, " _vm.jkl ");
     }
 
     #[test]
@@ -431,6 +424,43 @@ mod tests {
                         "?_c('h1',[_vm._v(\"False\")])",
                         ":_c('h1',[_vm._v(\"Unknown\")])",
                         "])",
+                    ),
+                );
+            }
+
+            #[test]
+            fn v_for() {
+                template_to_js_eq(
+                    "<div><div v-for='entry in list'/></div>",
+                    "_c('div',_vm._l((_vm.list),(entry)=>_c('div',[])),0)",
+                );
+
+                // With entry and key
+                template_to_js_eq(
+                    "<div><div v-for='(entry, key) in list'/></div>",
+                    "_c('div',_vm._l((_vm.list),(entry,key)=>_c('div',[])),0)",
+                );
+
+                // With entry, key and index
+                template_to_js_eq(
+                    "<div><div v-for='(entry, key, index) in list'/></div>",
+                    "_c('div',_vm._l((_vm.list),(entry,key,index)=>_c('div',[])),0)",
+                );
+
+                // With custom component
+                template_to_js_eq(
+                    "<div><custom-component v-for='entry in list'/></div>",
+                    "_c('div',_vm._l((_vm.list),(entry)=>_c('custom-component',[])),1)",
+                );
+
+                // With other elements within the same element
+                template_to_js_eq(
+                    "<div><h1>HELLO</h1><div v-for='entry in list'/></div>",
+                    concat!(
+                        "_c('div',[",
+                        "_c('h1',[_vm._v(\"HELLO\")]),",
+                        "_vm._l((_vm.list),(entry)=>_c('div',[]))",
+                        "],2)",
                     ),
                 );
             }

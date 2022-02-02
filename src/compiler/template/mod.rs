@@ -520,7 +520,7 @@ pub fn compile(p: &mut Parser) -> Result<Vec<Child>, ParserError> {
 pub enum Child {
     Tag(Tag, Vec<Child>),
     Text(SourceLocation),
-    Var(SourceLocation, Vec<SourceLocation>),
+    Var(String),
 }
 
 impl Child {
@@ -634,10 +634,8 @@ impl Child {
     fn parse_var(p: &mut Parser) -> Result<Self, ParserError> {
         let start = p.current_char;
         let global_vars = js::parse_template_var(p)?;
-        Ok(Self::Var(
-            SourceLocation(start, p.current_char - 2),
-            global_vars,
-        ))
+        let var = SourceLocation(start, p.current_char - 2);
+        Ok(Self::Var(js::add_vm_references(p, &var, &global_vars)))
     }
 
     pub fn is_v_else_or_else_if(&self) -> bool {

@@ -189,9 +189,9 @@ pub fn child_to_js(child: &Child, p: &Parser, resp: &mut Vec<char>) -> ChildToJs
             }
             write_str("\")", resp);
         }
-        Child::Var(var, global_refs) => {
+        Child::Var(var) => {
             write_str("_vm._s(", resp);
-            write_str(&js::add_vm_references(p, var, global_refs), resp);
+            write_str(&var, resp);
             resp.push(')');
         }
     };
