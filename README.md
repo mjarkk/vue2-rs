@@ -26,7 +26,7 @@ This is a project that is in progress
         - [x] `v-bind`
         - [x] `v-on`
         - [x] `v-if`, `v-else-if`, `v-else`
-        - [ ] `v-for`
+        - [x] `v-for`
         - [ ] `v-pre`
         - [ ] `v-slot`
         - [x] `v-text`
