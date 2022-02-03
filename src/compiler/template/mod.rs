@@ -115,7 +115,7 @@ fn add_or_set<T>(list: &mut Option<Vec<T>>, add: T) {
 }
 
 #[derive(Debug, Clone)]
-struct ParsedVFor {
+pub struct ParsedVFor {
     value: String,
     key: Option<String>,
     index: Option<String>,
@@ -1042,19 +1042,19 @@ impl VueTagArgs {
             }
             VueArgKind::Slot => {
                 todo!("Slot");
-                true
+                // true
             }
             VueArgKind::Pre => {
                 todo!("Pre");
-                true
+                // true
             }
             VueArgKind::Cloak => {
                 todo!("Cloak");
-                true
+                // true
             }
             VueArgKind::Once => {
                 todo!("Once");
-                true
+                // true
             }
             VueArgKind::CustomDirective(directive) => {
                 add_or_set(&mut self.directives, (directive, value_as_js));
