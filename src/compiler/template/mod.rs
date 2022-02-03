@@ -315,6 +315,15 @@ fn try_parse_arg(
             }
 
             let result = parse_v_for_value(p)?;
+
+            let mut local_variables_list: Vec<String> = vec![result.value.clone()];
+            if let Some(key) = result.key.as_ref() {
+                local_variables_list.push(key.clone());
+                if let Some(index) = result.index.as_ref() {
+                    local_variables_list.push(index.clone());
+                }
+            }
+            result_args.new_local_variables = Some(local_variables_list);
             result_args.set_modifier(VueTagModifier::For(result))?;
 
             c = p.must_read_one()?;
@@ -566,11 +575,38 @@ impl Child {
                         }
                         TagType::Open => {
                             parents_tag_names.push(tag.name.clone());
+
+                            let local_variables = tag.args.new_local_variables.as_ref();
+
+                            // Add the new local variables if there where some
+                            if let Some(new_local_variables) = local_variables {
+                                for var_name in new_local_variables {
+                                    if let Some(count) = p.local_variables.get_mut(var_name) {
+                                        *count += 1;
+                                    } else {
+                                        p.local_variables.insert(var_name.clone(), 1);
+                                    }
+                                }
+                            }
+
                             let compile_children_result =
                                 Self::parse_children(p, parents_tag_names);
 
                             let tag_name = parents_tag_names.pop().unwrap();
                             let (children, closing_tag_name) = compile_children_result?;
+
+                            // Remove the local variables we above inserted
+                            if let Some(new_local_variables) = local_variables {
+                                for var_name in new_local_variables {
+                                    if let Some(count) = p.local_variables.get_mut(var_name) {
+                                        if *count == 1 {
+                                            p.local_variables.remove(var_name);
+                                        } else {
+                                            *count -= 1;
+                                        }
+                                    }
+                                }
+                            }
 
                             resp.push(Self::Tag(tag, children));
 
@@ -813,6 +849,7 @@ impl Tag {
 // This is a somewhat rust representation of the vue component render arguments
 #[derive(Debug, Clone)]
 pub struct VueTagArgs {
+    pub new_local_variables: Option<Vec<String>>,
     pub modifier: Option<VueTagModifier>,
     pub has_js_component_args: bool,
 
@@ -880,6 +917,7 @@ pub struct VueTagArgs {
 impl VueTagArgs {
     fn new() -> Self {
         Self {
+            new_local_variables: None,
             modifier: None,
             has_js_component_args: false,
             class: None,

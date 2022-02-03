@@ -5,6 +5,7 @@ pub mod tests;
 pub mod utils;
 
 use error::ParserError;
+use std::collections::HashMap;
 use utils::is_space;
 
 #[derive(Debug)]
@@ -15,6 +16,8 @@ pub struct Parser {
     pub template: Option<Template>,
     pub script: Option<Script>,
     pub styles: Vec<Style>,
+
+    pub local_variables: HashMap<String, u16>,
 }
 
 #[derive(Debug, Clone)]
@@ -42,6 +45,7 @@ impl Parser {
         let source_chars: Vec<char> = source.chars().collect();
         let source_chars_len = source_chars.len();
         return Self {
+            local_variables: HashMap::new(),
             source_chars,
             source_chars_len,
             current_char: 0,

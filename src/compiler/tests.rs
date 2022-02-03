@@ -435,6 +435,11 @@ mod tests {
                     "_c('div',_vm._l((_vm.list),(entry)=>_c('div',[])),0)",
                 );
 
+                template_to_js_eq(
+                    "<div><div v-for='entry in list'>{{ entry }} {{ other_var }}</div></div>",
+                    "_c('div',_vm._l((_vm.list),(entry)=>_c('div',[_vm._s( entry ),_vm._s( _vm.other_var )])),0)",
+                );
+
                 // With entry and key
                 template_to_js_eq(
                     "<div><div v-for='(entry, key) in list'/></div>",

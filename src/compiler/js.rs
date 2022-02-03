@@ -17,10 +17,16 @@ pub fn add_vm_references(
 
     loop {
         resp.push_str(&SourceLocation(last.1, current.0).string(p));
-        resp.push_str("_vm");
-        if !current.eq(p, "this".chars()) {
-            resp.push('.');
-            resp.push_str(&current.string(p));
+
+        let current_str = current.string(p);
+        if current_str == "this" {
+            resp.push_str("_vm");
+        } else if p.local_variables.get(&current_str).is_some() {
+            // is local variable, do not make modifications
+            resp.push_str(&current_str);
+        } else {
+            resp.push_str("_vm.");
+            resp.push_str(&current_str);
         }
 
         last = current.clone();
