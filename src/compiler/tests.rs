@@ -485,6 +485,14 @@ mod tests {
                     "_c('div',{domProps:{\"innerHTML\":'<div></div>'},[])",
                 )
             }
+
+            #[test]
+            fn v_custom_directive() {
+                template_to_js_eq(
+                    "<div v-show=\"true\" />",
+                    "_c('div',{directives:[{name:\"show\",rawName:\"v-show\",value:true,expression:\"false\"}[},[])",
+                )
+            }
         }
     }
 

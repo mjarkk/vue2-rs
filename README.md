@@ -31,11 +31,10 @@ This is a project that is in progress
         - [ ] `v-slot`
         - [x] `v-text`
         - [x] `v-html`
-        - [ ] `v-show`
         - [ ] `v-once`
         - [ ] `v-model`
         - [ ] `v-cloak`
-        - [ ] Custom (`v-custom-directive`)
+        - [x] Custom (`v-custom-directive`)
     - [ ] Support for `<template>` element
     - [ ] Pug support?
 - [ ] Script

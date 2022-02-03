@@ -401,7 +401,6 @@ fn try_parse_arg(
             key if key.starts_with("slot") => (true, VueArgKind::Slot),
             "text" => (true, VueArgKind::Text),
             "html" => (true, VueArgKind::Html),
-            "show" => (true, VueArgKind::Show),
             "once" => (false, VueArgKind::Once),
             "model" => (true, VueArgKind::Model),
             key if key.starts_with("model") => (true, VueArgKind::Model),
@@ -411,12 +410,7 @@ fn try_parse_arg(
             key if key.starts_with("bind:") => (true, VueArgKind::Bind),
             "on" => (true, VueArgKind::On),
             key if key.starts_with("on") => (true, VueArgKind::On),
-            _ => {
-                return Err(ParserError::new(
-                    "try_parse_arg",
-                    format!("unknown vue argument \"v-{}\"", key),
-                ));
-            }
+            _ => (true, VueArgKind::CustomDirective(key.clone())),
         };
 
         if has_value != expects_argument {
@@ -889,7 +883,7 @@ pub struct VueTagArgs {
     // Custom directives. Note that the `binding`'s
     // `oldValue` cannot be set, as Vue keeps track
     // of it for you.
-    pub directives: Option<Vec<JsTagArgsDirective>>,
+    pub directives: Option<Vec<(String, String)>>,
 
     // TODO
     // Scoped slots in the form of
@@ -1003,10 +997,6 @@ impl VueTagArgs {
                 );
                 true
             }
-            VueArgKind::Show => {
-                todo!("Show");
-                true
-            }
             VueArgKind::If => {
                 self.set_modifier(VueTagModifier::If(value_as_js))?;
                 false
@@ -1039,6 +1029,10 @@ impl VueTagArgs {
                 todo!("Once");
                 true
             }
+            VueArgKind::CustomDirective(directive) => {
+                add_or_set(&mut self.directives, (directive, value_as_js));
+                true
+            }
         };
         if set_has_js_component_args {
             self.has_js_component_args = true;
@@ -1068,7 +1062,6 @@ pub enum VueArgKind {
     On,
     Text,
     Html,
-    Show,
     If,
     Else,
     ElseIf,
@@ -1078,6 +1071,7 @@ pub enum VueArgKind {
     Pre,
     Cloak,
     Once,
+    CustomDirective(String),
 }
 
 #[derive(Debug, Clone)]
@@ -1097,13 +1091,4 @@ impl VueTagModifier {
             Self::Else => "v-else",
         }
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct JsTagArgsDirective {
-    pub name: String,                   // "my-custom-directive"
-    pub value: String,                  // "2"
-    pub expression: String,             // "1 + 1"
-    pub arg: String,                    // "foo",
-    pub modifiers: Vec<(String, bool)>, // { bar: true }
 }

@@ -279,8 +279,46 @@ pub fn vue_tag_args_to_js(args: &VueTagArgs, dest: &mut Vec<char>, is_custom_com
         dest.push('}');
     }
 
-    // TODO: native_on // Option<Vec<(SourceLocation, SourceLocation)>>,
-    // TODO: directives // Option<Vec<JsTagArgsDirective>>,
+    if let Some(on) = args.native_on.as_ref() {
+        object_entries.add(dest);
+        write_str("nativeOn:{", dest);
+        let mut on_entries = CommaSeparatedEntries::new();
+
+        for (key, value) in on {
+            on_entries.add(dest);
+
+            dest.push('"');
+            write_str(&js::escape_quotes(key, '"'), dest);
+            write_str("\":$event=>{", dest);
+
+            for c in value.chars() {
+                dest.push(c);
+            }
+
+            dest.push('}');
+        }
+
+        dest.push('}');
+    }
+
+    if let Some(directives) = args.directives.as_ref() {
+        object_entries.add(dest);
+        write_str("directives:[", dest);
+        let mut directive_entries = CommaSeparatedEntries::new();
+
+        for (name, value) in directives {
+            directive_entries.add(dest);
+            write_str("{name:\"", dest);
+            write_str(name, dest);
+            write_str("\",rawName:\"v-", dest);
+            write_str(name, dest);
+            write_str("\",value:", dest);
+            write_str(value, dest);
+            write_str(",expression:\"false\"}", dest);
+        }
+
+        dest.push('[');
+    }
 
     if let Some(slot) = args.slot.as_ref() {
         object_entries.add(dest);
@@ -300,7 +338,15 @@ pub fn vue_tag_args_to_js(args: &VueTagArgs, dest: &mut Vec<char>, is_custom_com
         write_str(&ref_, dest);
     }
 
-    // TODO: ref_in_for // Option<bool>,
+    if let Some(ref_in_for) = args.ref_in_for.as_ref() {
+        object_entries.add(dest);
+        if *ref_in_for {
+            write_str("refInFor:true", dest);
+        } else {
+            write_str("refInFor:false", dest);
+        }
+    }
+
     dest.push('}');
 }
 
