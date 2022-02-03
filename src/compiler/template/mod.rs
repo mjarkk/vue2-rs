@@ -10,6 +10,7 @@ pub fn parse_tag(p: &mut Parser, v_else_allowed: bool) -> Result<Tag, ParserErro
         type_: TagType::Open,
         name: SourceLocation(p.current_char, 0),
         args: VueTagArgs::new(),
+        is_custom_component: false,
     };
 
     let mut is_close_tag = false;
@@ -45,6 +46,7 @@ pub fn parse_tag(p: &mut Parser, v_else_allowed: bool) -> Result<Tag, ParserErro
             type_: TagType::DocType,
             name: SourceLocation::empty(),
             args: VueTagArgs::new(),
+            is_custom_component: false,
         });
     }
 
@@ -64,10 +66,12 @@ pub fn parse_tag(p: &mut Parser, v_else_allowed: bool) -> Result<Tag, ParserErro
         return Err(ParserError::new("parse_tag", "expected tag name"));
     }
 
+    tag.is_custom_component = is_tag_name_a_custom_component(p, &tag.name);
+
     // Parse args
     loop {
         c = p.must_read_one_skip_spacing()?;
-        c = match try_parse_arg(p, c, &mut tag.args, v_else_allowed)? {
+        c = match try_parse_arg(p, c, &mut tag.args, v_else_allowed, tag.is_custom_component)? {
             Some(next_char) => next_char,
             None => c,
         };
@@ -257,6 +261,7 @@ fn try_parse_arg(
     mut c: char,
     result_args: &mut VueTagArgs,
     v_else_allowed: bool,
+    is_custom_component: bool,
 ) -> Result<Option<char>, ParserError> {
     let mut is_v_on_shortcut = false;
     let mut is_v_bind_shortcut = false;
@@ -368,7 +373,7 @@ fn try_parse_arg(
                 ));
             }
 
-            result_args.add(VueArgKind::On, key, value)?;
+            result_args.add(VueArgKind::On, key, value, is_custom_component)?;
             return Ok(Some(c));
         }
 
@@ -386,7 +391,7 @@ fn try_parse_arg(
                 ));
             }
 
-            result_args.add(VueArgKind::Bind, key, value)?;
+            result_args.add(VueArgKind::Bind, key, value, is_custom_component)?;
             return Ok(Some(c));
         }
 
@@ -444,7 +449,7 @@ fn try_parse_arg(
             }
         }
 
-        result_args.add(arg_kind, key, value)?;
+        result_args.add(arg_kind, key, value, is_custom_component)?;
         Ok(Some(c))
     } else {
         let value_as_js: String = if has_value {
@@ -503,7 +508,12 @@ fn try_parse_arg(
             String::from("true")
         };
 
-        result_args.add(VueArgKind::Default, key_location.string(p), value_as_js)?;
+        result_args.add(
+            VueArgKind::Default,
+            key_location.string(p),
+            value_as_js,
+            is_custom_component,
+        )?;
         Ok(Some(c))
     }
 }
@@ -702,141 +712,140 @@ pub struct Tag {
     pub type_: TagType,
     pub name: SourceLocation,
     pub args: VueTagArgs,
+    pub is_custom_component: bool,
 }
 
-impl Tag {
-    pub fn is_custom_component(&self, parser: &Parser) -> bool {
-        let html_elements = vec![
-            "a".chars(),
-            "abbr".chars(),
-            "acronym".chars(),
-            "address".chars(),
-            "applet".chars(),
-            "area".chars(),
-            "article".chars(),
-            "aside".chars(),
-            "audio".chars(),
-            "b".chars(),
-            "base".chars(),
-            "basefont".chars(),
-            "bdi".chars(),
-            "bdo".chars(),
-            "big".chars(),
-            "blockquote".chars(),
-            "body".chars(),
-            "br".chars(),
-            "button".chars(),
-            "canvas".chars(),
-            "caption".chars(),
-            "center".chars(),
-            "cite".chars(),
-            "code".chars(),
-            "col".chars(),
-            "colgroup".chars(),
-            "data".chars(),
-            "datalist".chars(),
-            "dd".chars(),
-            "del".chars(),
-            "details".chars(),
-            "dfn".chars(),
-            "dialog".chars(),
-            "dir".chars(),
-            "div".chars(),
-            "dl".chars(),
-            "dt".chars(),
-            "em".chars(),
-            "embed".chars(),
-            "fieldset".chars(),
-            "figcaption".chars(),
-            "figure".chars(),
-            "font".chars(),
-            "footer".chars(),
-            "form".chars(),
-            "frame".chars(),
-            "frameset".chars(),
-            "head".chars(),
-            "header".chars(),
-            "hgroup".chars(),
-            "h1".chars(),
-            "h2".chars(),
-            "h3".chars(),
-            "h4".chars(),
-            "h5".chars(),
-            "h6".chars(),
-            "hr".chars(),
-            "html".chars(),
-            "i".chars(),
-            "iframe".chars(),
-            "img".chars(),
-            "input".chars(),
-            "ins".chars(),
-            "kbd".chars(),
-            "keygen".chars(),
-            "label".chars(),
-            "legend".chars(),
-            "li".chars(),
-            "link".chars(),
-            "main".chars(),
-            "map".chars(),
-            "mark".chars(),
-            "menu".chars(),
-            "menuitem".chars(),
-            "meta".chars(),
-            "meter".chars(),
-            "nav".chars(),
-            "noframes".chars(),
-            "noscript".chars(),
-            "object".chars(),
-            "ol".chars(),
-            "optgroup".chars(),
-            "option".chars(),
-            "output".chars(),
-            "p".chars(),
-            "param".chars(),
-            "picture".chars(),
-            "pre".chars(),
-            "progress".chars(),
-            "q".chars(),
-            "rp".chars(),
-            "rt".chars(),
-            "ruby".chars(),
-            "s".chars(),
-            "samp".chars(),
-            "script".chars(),
-            "section".chars(),
-            "select".chars(),
-            "small".chars(),
-            "source".chars(),
-            "span".chars(),
-            "strike".chars(),
-            "strong".chars(),
-            "style".chars(),
-            "sub".chars(),
-            "summary".chars(),
-            "sup".chars(),
-            "svg".chars(),
-            "table".chars(),
-            "tbody".chars(),
-            "td".chars(),
-            "template".chars(),
-            "textarea".chars(),
-            "tfoot".chars(),
-            "th".chars(),
-            "thead".chars(),
-            "time".chars(),
-            "title".chars(),
-            "tr".chars(),
-            "track".chars(),
-            "tt".chars(),
-            "u".chars(),
-            "ul".chars(),
-            "var".chars(),
-            "video".chars(),
-            "wbr".chars(),
-        ];
+pub fn is_tag_name_a_custom_component(parser: &Parser, tag_name: &SourceLocation) -> bool {
+    let html_elements = vec![
+        "a".chars(),
+        "abbr".chars(),
+        "acronym".chars(),
+        "address".chars(),
+        "applet".chars(),
+        "area".chars(),
+        "article".chars(),
+        "aside".chars(),
+        "audio".chars(),
+        "b".chars(),
+        "base".chars(),
+        "basefont".chars(),
+        "bdi".chars(),
+        "bdo".chars(),
+        "big".chars(),
+        "blockquote".chars(),
+        "body".chars(),
+        "br".chars(),
+        "button".chars(),
+        "canvas".chars(),
+        "caption".chars(),
+        "center".chars(),
+        "cite".chars(),
+        "code".chars(),
+        "col".chars(),
+        "colgroup".chars(),
+        "data".chars(),
+        "datalist".chars(),
+        "dd".chars(),
+        "del".chars(),
+        "details".chars(),
+        "dfn".chars(),
+        "dialog".chars(),
+        "dir".chars(),
+        "div".chars(),
+        "dl".chars(),
+        "dt".chars(),
+        "em".chars(),
+        "embed".chars(),
+        "fieldset".chars(),
+        "figcaption".chars(),
+        "figure".chars(),
+        "font".chars(),
+        "footer".chars(),
+        "form".chars(),
+        "frame".chars(),
+        "frameset".chars(),
+        "head".chars(),
+        "header".chars(),
+        "hgroup".chars(),
+        "h1".chars(),
+        "h2".chars(),
+        "h3".chars(),
+        "h4".chars(),
+        "h5".chars(),
+        "h6".chars(),
+        "hr".chars(),
+        "html".chars(),
+        "i".chars(),
+        "iframe".chars(),
+        "img".chars(),
+        "input".chars(),
+        "ins".chars(),
+        "kbd".chars(),
+        "keygen".chars(),
+        "label".chars(),
+        "legend".chars(),
+        "li".chars(),
+        "link".chars(),
+        "main".chars(),
+        "map".chars(),
+        "mark".chars(),
+        "menu".chars(),
+        "menuitem".chars(),
+        "meta".chars(),
+        "meter".chars(),
+        "nav".chars(),
+        "noframes".chars(),
+        "noscript".chars(),
+        "object".chars(),
+        "ol".chars(),
+        "optgroup".chars(),
+        "option".chars(),
+        "output".chars(),
+        "p".chars(),
+        "param".chars(),
+        "picture".chars(),
+        "pre".chars(),
+        "progress".chars(),
+        "q".chars(),
+        "rp".chars(),
+        "rt".chars(),
+        "ruby".chars(),
+        "s".chars(),
+        "samp".chars(),
+        "script".chars(),
+        "section".chars(),
+        "select".chars(),
+        "small".chars(),
+        "source".chars(),
+        "span".chars(),
+        "strike".chars(),
+        "strong".chars(),
+        "style".chars(),
+        "sub".chars(),
+        "summary".chars(),
+        "sup".chars(),
+        "svg".chars(),
+        "table".chars(),
+        "tbody".chars(),
+        "td".chars(),
+        "template".chars(),
+        "textarea".chars(),
+        "tfoot".chars(),
+        "th".chars(),
+        "thead".chars(),
+        "time".chars(),
+        "title".chars(),
+        "tr".chars(),
+        "track".chars(),
+        "tt".chars(),
+        "u".chars(),
+        "ul".chars(),
+        "var".chars(),
+        "video".chars(),
+        "wbr".chars(),
+    ];
 
-        self.name.eq_some(parser, false, html_elements).is_none()
-    }
+    tag_name.eq_some(parser, false, html_elements).is_none()
 }
 
 // https://vuejs.org/v2/guide/render-function.html
@@ -966,6 +975,7 @@ impl VueTagArgs {
         kind: VueArgKind,
         key: String,
         value_as_js: String,
+        is_custom_component: bool,
     ) -> Result<(), ParserError> {
         let set_has_js_component_args = match kind {
             VueArgKind::Default | VueArgKind::Bind => {
@@ -1010,7 +1020,24 @@ impl VueTagArgs {
                 false
             }
             VueArgKind::Model => {
-                todo!("Model");
+                add_or_set(
+                    &mut self.on,
+                    (
+                        String::from("input"),
+                        format!(
+                            "$event.target.composing?undefined:{}=$event.target.value",
+                            &value_as_js
+                        ),
+                    ),
+                );
+
+                if is_custom_component {
+                    add_or_set(&mut self.attrs_or_props, (key, value_as_js.clone()));
+                } else {
+                    add_or_set(&mut self.dom_props, (key, value_as_js.clone()));
+                }
+
+                add_or_set(&mut self.directives, (String::from("model"), value_as_js));
                 true
             }
             VueArgKind::Slot => {

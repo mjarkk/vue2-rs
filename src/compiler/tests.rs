@@ -490,7 +490,7 @@ mod tests {
             fn v_custom_directive() {
                 template_to_js_eq(
                     "<div v-show=\"true\" />",
-                    "_c('div',{directives:[{name:\"show\",rawName:\"v-show\",value:true,expression:\"false\"}[},[])",
+                    "_c('div',{directives:[{name:\"show\",rawName:\"v-show\",value:true,expression:\"true\"}[},[])",
                 )
             }
         }

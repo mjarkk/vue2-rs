@@ -143,7 +143,7 @@ pub fn child_to_js(child: &Child, p: &Parser, resp: &mut Vec<char>) -> ChildToJs
             write_str("_c('", resp);
             tag.name.write_to_vec_escape(p, resp, '\'', '\\');
             resp.push('\'');
-            artifacts.is_custom_component = tag.is_custom_component(p);
+            artifacts.is_custom_component = tag.is_custom_component;
             if tag.args.has_js_component_args {
                 resp.push(',');
                 vue_tag_args_to_js(&tag.args, resp, artifacts.is_custom_component);
@@ -314,7 +314,9 @@ pub fn vue_tag_args_to_js(args: &VueTagArgs, dest: &mut Vec<char>, is_custom_com
             write_str(name, dest);
             write_str("\",value:", dest);
             write_str(value, dest);
-            write_str(",expression:\"false\"}", dest);
+            write_str(",expression:\"", dest);
+            write_str(&js::escape_quotes(&value, '"'), dest);
+            write_str("\"}", dest);
         }
 
         dest.push('[');
