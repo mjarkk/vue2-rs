@@ -1119,3 +1119,206 @@ impl VueTagModifier {
         }
     }
 }
+
+fn new_try_parse_arg(p: &mut Parser, mut c: char) -> Result<Option<char>, ParserError> {
+    if !is_start_of_arg(c) {
+        return Ok(None);
+    }
+
+    let (name_result, next_c) = parse_arg_name(p, c)?;
+    c = next_c;
+
+    let (expect_value, target_allowed, modifier_allowed, arg_kind) = match name_result.name.as_str()
+    {
+        "v-if" => (ExpectValue::Yes, false, false, VueArgKind::If),
+        "v-pre" => (ExpectValue::Yes, false, false, VueArgKind::Pre),
+        "v-else" => (ExpectValue::No, false, false, VueArgKind::Else),
+        "v-slot" => (ExpectValue::Yes, true, false, VueArgKind::Slot),
+        "v-text" => (ExpectValue::Yes, false, false, VueArgKind::Text),
+        "v-html" => (ExpectValue::Yes, false, false, VueArgKind::Html),
+        "v-once" => (ExpectValue::No, false, false, VueArgKind::Once),
+        "v-model" => (ExpectValue::Yes, true, true, VueArgKind::Model),
+        "v-cloak" => (ExpectValue::Yes, false, false, VueArgKind::Cloak),
+        "v-else-if" => (ExpectValue::Yes, false, false, VueArgKind::ElseIf),
+        "v-bind" => (ExpectValue::Yes, true, true, VueArgKind::Bind),
+        "v-on" => (ExpectValue::Yes, true, true, VueArgKind::On),
+        name if name.starts_with("v-") => (
+            ExpectValue::Yes,
+            true,
+            true,
+            VueArgKind::CustomDirective(name.to_string()),
+        ),
+        _ => (ExpectValue::Both, false, false, VueArgKind::Default),
+    };
+
+    if !target_allowed && name_result.target.is_some() {
+        return Err(ParserError::new(
+            "try_parse_arg",
+            format!(
+                "target set on argument {} but is not allowed",
+                name_result.name
+            ),
+        ));
+    }
+
+    if !modifier_allowed && name_result.modifiers.is_some() {
+        return Err(ParserError::new(
+            "try_parse_arg",
+            format!(
+                "modifier set on argument {} but is not allowed",
+                name_result.name
+            ),
+        ));
+    }
+
+    match expect_value {
+        ExpectValue::Yes if !name_result.parse_value_next => {
+            return Err(ParserError::new(
+                "try_parse_arg",
+                format!(
+                    "expected an argument value for {} but got none",
+                    name_result.name
+                ),
+            ))
+        }
+        ExpectValue::No if name_result.parse_value_next => {
+            return Err(ParserError::new(
+                "try_parse_arg",
+                format!(
+                    "expected NO argument value for {} but got one",
+                    name_result.name
+                ),
+            ))
+        }
+        _ => {}
+    };
+
+    Ok(Some(c))
+}
+
+fn is_start_of_arg(c: char) -> bool {
+    match c {
+        '@' | ':' | 'a'..='z' | 'A'..='Z' | '0'..='9' | '_' => true,
+        _ => false,
+    }
+}
+
+enum ExpectValue {
+    Yes,
+    No,
+    Both,
+}
+
+struct ParseArgNameResult {
+    parse_value_next: bool,
+    // name details
+    name: String,                   // `v-bind` of `v-bind:some_value.trim`
+    target: Option<String>,         // `some_value` of `v-bind:some_value.trim`
+    modifiers: Option<Vec<String>>, // `trim` of `v-bind:some_value.trim`
+}
+
+fn parse_arg_name(p: &mut Parser, mut c: char) -> Result<(ParseArgNameResult, char), ParserError> {
+    let invalid_character_err = |c: char| {
+        Err(ParserError::new(
+            "try_parse_arg",
+            format!("invalid argument character '{}'", c.to_string()),
+        ))
+    };
+
+    let mut name = String::new();
+
+    let mut parse_target_next = false;
+    let mut parse_modifier_next = false;
+    let mut parse_value_next = false;
+
+    match c {
+        '@' => {
+            name = String::from("v-on");
+            parse_target_next = true;
+        }
+        ':' => {
+            name = String::from("v-bind");
+            parse_target_next = true;
+        }
+        'a'..='z' | 'A'..='Z' | '0'..='9' | '_' => {
+            name.push(c);
+            loop {
+                c = p.must_read_one()?;
+                match c {
+                    'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' => name.push(c),
+                    ':' => {
+                        parse_target_next = true;
+                        break;
+                    }
+                    '.' => {
+                        parse_modifier_next = true;
+                        break;
+                    }
+                    '=' => {
+                        parse_value_next = true;
+                        break;
+                    }
+                    c => return invalid_character_err(c),
+                }
+            }
+        }
+        c => return invalid_character_err(c),
+    };
+
+    let target: Option<String> = if parse_target_next {
+        let mut target = String::new();
+        loop {
+            c = p.must_read_one()?;
+            match c {
+                'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' => target.push(c),
+                '.' => {
+                    parse_modifier_next = true;
+                    break;
+                }
+                '=' => {
+                    parse_value_next = true;
+                    break;
+                }
+                c => return invalid_character_err(c),
+            }
+        }
+        Some(target)
+    } else {
+        None
+    };
+
+    let modifiers: Option<Vec<String>> = if parse_modifier_next {
+        let mut modifiers: Vec<String> = Vec::new();
+        'outer: loop {
+            let mut modifier = String::new();
+            loop {
+                c = p.must_read_one()?;
+                match c {
+                    'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' => modifier.push(c),
+                    '.' => {
+                        break;
+                    }
+                    '=' => {
+                        parse_value_next = true;
+                        break 'outer;
+                    }
+                    c => return invalid_character_err(c),
+                }
+            }
+            modifiers.push(modifier);
+        }
+        Some(modifiers)
+    } else {
+        None
+    };
+
+    Ok((
+        ParseArgNameResult {
+            parse_value_next: parse_value_next,
+            name,
+            target,
+            modifiers,
+        },
+        c,
+    ))
+}
