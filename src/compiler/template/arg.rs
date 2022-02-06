@@ -2,7 +2,11 @@ use super::super::utils::is_space;
 use super::super::{js, Parser, ParserError, QuoteKind, SourceLocation};
 use super::VueTagArgs;
 
-fn new_try_parse(p: &mut Parser, mut c: char) -> Result<Option<char>, ParserError> {
+fn new_try_parse(
+    p: &mut Parser,
+    mut c: char,
+    result: &mut VueTagArgs,
+) -> Result<Option<char>, ParserError> {
     if !is_start_of_arg(c) {
         return Ok(None);
     }
