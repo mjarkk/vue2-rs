@@ -1,7 +1,8 @@
+mod arg;
 pub mod to_js;
 
 use super::utils::is_space;
-use super::{js, Parser, ParserError, QuoteKind, SourceLocation, TagType};
+use super::{js, Parser, ParserError, SourceLocation, TagType};
 
 // parse_tag is expected to be next to the open indicator (<) at the first character of the tag name
 // TODO support upper case tag names
@@ -71,7 +72,7 @@ pub fn parse_tag(p: &mut Parser, v_else_allowed: bool) -> Result<Tag, ParserErro
     // Parse args
     loop {
         c = p.must_read_one_skip_spacing()?;
-        c = match try_parse_arg(p, c, &mut tag.args, v_else_allowed, tag.is_custom_component)? {
+        c = match arg::try_parse(p, c, &mut tag.args, v_else_allowed, tag.is_custom_component)? {
             Some(next_char) => next_char,
             None => c,
         };
@@ -114,410 +115,6 @@ fn add_or_set<T>(list: &mut Option<Vec<T>>, add: T) {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct ParsedVFor {
-    value: String,
-    key: Option<String>,
-    index: Option<String>,
-    list: String,
-}
-
-fn parse_v_for_value(p: &mut Parser) -> Result<ParsedVFor, ParserError> {
-    let closure = p.must_read_one()?;
-    match closure {
-        '"' | '\'' => {} // Ok
-        c => {
-            return Err(ParserError::new(
-                "parse_v_for_value",
-                format!(
-                    "expected opening of argument value ('\"' or \"'\") but got '{}'",
-                    c.to_string()
-                ),
-            ))
-        }
-    }
-
-    // if true `foo in bar`, if false: `(foo, idx) in bar` or `(foo) in bar`
-    let mut is_single = false;
-
-    // Look for the start of the name
-    // `(foo) in bar`
-    //   ^- Find this
-    match p.must_read_one_skip_spacing()? {
-        '(' => {
-            let c = p.must_read_one_skip_spacing()?;
-            if !c.is_ascii_lowercase() && !c.is_ascii_uppercase() && c <= '}' {
-                return Err(ParserError::new(
-                    "parse_v_for_value",
-                    format!("unexpected character '{}'", c.to_string()),
-                ));
-            }
-        }
-        c if c.is_ascii_lowercase() || c.is_ascii_uppercase() || c > '}' => {
-            is_single = true;
-        }
-        c => {
-            return Err(ParserError::new(
-                "parse_v_for_value",
-                format!("unexpected character '{}'", c.to_string()),
-            ))
-        }
-    }
-
-    let (mut c, value_location) = js::parse_name(p)?;
-    if is_space(c) {
-        c = p.must_read_one_skip_spacing()?;
-    }
-
-    let mut result = ParsedVFor {
-        value: value_location.string(p),
-        key: None,
-        index: None,
-        list: String::new(),
-    };
-
-    if !is_single {
-        if c == ',' {
-            // Read the key
-            // `v-for"(value, key) in list"`
-            //                ^- That one
-            p.must_read_one_skip_spacing()?;
-
-            let (next_c, key_location) = js::parse_name(p)?;
-            c = next_c;
-            result.key = Some(key_location.string(p));
-
-            if is_space(c) {
-                c = p.must_read_one_skip_spacing()?;
-            }
-
-            if c == ',' {
-                // Read the index
-                // `v-for"(value, key, index) in object"`
-                //                     ^- That one
-                p.must_read_one_skip_spacing()?;
-
-                let (next_c, index_location) = js::parse_name(p)?;
-                c = next_c;
-                result.index = Some(index_location.string(p));
-
-                if is_space(c) {
-                    c = p.must_read_one_skip_spacing()?;
-                }
-            }
-        }
-
-        if c != ')' {
-            return Err(ParserError::new(
-                "parse_v_for_value",
-                format!("expected ')' but got '{}'", c.to_string()),
-            ));
-        }
-        c = p.must_read_one_skip_spacing()?;
-    }
-
-    if c != 'i' {
-        return Err(ParserError::new(
-            "parse_v_for_value",
-            format!(
-                "expected v-for value to be \".. in ..\" but got '{}'",
-                c.to_string()
-            ),
-        ));
-    }
-    c = p.must_read_one()?;
-    if c != 'n' {
-        return Err(ParserError::new(
-            "parse_v_for_value",
-            format!(
-                "expected v-for value to be \".. in ..\" but got '{}'",
-                c.to_string()
-            ),
-        ));
-    }
-    c = p.must_read_one()?;
-    if !is_space(c) {
-        return Err(ParserError::new(
-            "parse_v_for_value",
-            format!(
-                "expected v-for value to be \".. in ..\" but got '{}'",
-                c.to_string()
-            ),
-        ));
-    }
-
-    let start = p.current_char;
-    let replacements = js::parse_template_arg(p, closure)?;
-    let list_location = SourceLocation(start, p.current_char - 1);
-    result.list = js::add_vm_references(p, &list_location, &replacements);
-
-    Ok(result)
-}
-
-// Try_parse_arg parses a key="value" , :key="value" , v-bind:key="value" , v-on:key="value" and @key="value"
-// It returns Ok(None) if first_char is not a char expected as first character of a argument
-fn try_parse_arg(
-    p: &mut Parser,
-    mut c: char,
-    result_args: &mut VueTagArgs,
-    v_else_allowed: bool,
-    is_custom_component: bool,
-) -> Result<Option<char>, ParserError> {
-    let mut is_v_on_shortcut = false;
-    let mut is_v_bind_shortcut = false;
-
-    let mut key_location = SourceLocation(p.current_char - 1, 0);
-
-    match c {
-        '@' => {
-            is_v_on_shortcut = true;
-            key_location.0 += 1;
-        }
-        ':' => {
-            is_v_bind_shortcut = true;
-            key_location.0 += 1;
-        }
-        'a'..='z' | 'A'..='Z' | '0'..='9' | '_' => {}
-        _ => return Ok(None),
-    };
-
-    let mut has_value = false;
-    loop {
-        c = p.must_read_one()?;
-        match c {
-            'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' | ':' => {}
-            '=' => {
-                let c = p.must_seek_one()?;
-                has_value = !is_space(c) && c != '/' && c != '>';
-                break;
-            }
-            c if is_space(c) || c == '/' || c == '>' => {
-                break;
-            }
-            c => {
-                return Err(ParserError::new(
-                    "try_parse_arg",
-                    format!("unexpected argument character '{}'", c.to_string()),
-                ))
-            }
-        }
-    }
-    key_location.1 = p.current_char - 1;
-    let is_vue_dash_arg = key_location.starts_with(p, "v-".chars());
-    let is_vue_arg = is_vue_dash_arg || is_v_on_shortcut || is_v_bind_shortcut;
-    let mut key = key_location.string(p);
-
-    if is_vue_arg {
-        // parse vue specific tag
-        if key == "v-for" {
-            // Parse the value of the v-for tag
-            // V-for has a special value we cannot parse like the others
-            if !has_value {
-                return Err(ParserError::new(
-                    "try_parse_arg",
-                    "expected an argument value for \"v-for\"",
-                ));
-            }
-
-            let result = parse_v_for_value(p)?;
-
-            let mut local_variables_list: Vec<String> = vec![result.value.clone()];
-            if let Some(key) = result.key.as_ref() {
-                local_variables_list.push(key.clone());
-                if let Some(index) = result.index.as_ref() {
-                    local_variables_list.push(index.clone());
-                }
-            }
-            result_args.new_local_variables = Some(local_variables_list);
-            result_args.set_modifier(VueTagModifier::For(result))?;
-
-            c = p.must_read_one()?;
-            return Ok(Some(c));
-        }
-
-        let value: String = if has_value {
-            let closure = p.must_read_one()?;
-            match closure {
-                '"' | '\'' => {} // Ok
-                c => {
-                    return Err(ParserError::new(
-                        "try_parse_arg",
-                        format!(
-                            "expected opening of argument value ('\"' or \"'\") but got '{}'",
-                            c.to_string()
-                        ),
-                    ))
-                }
-            }
-            let start = p.current_char;
-            let replacements = js::parse_template_arg(p, closure)?;
-            let sl = SourceLocation(start, p.current_char - 1);
-            c = p.must_read_one()?;
-
-            js::add_vm_references(p, &sl, &replacements)
-        } else {
-            String::from("undefined")
-        };
-
-        if is_v_on_shortcut {
-            if is_vue_dash_arg {
-                return Err(ParserError::new(
-                    "try_parse_arg",
-                    "cannot use @v-.. as arg name",
-                ));
-            }
-            if !has_value {
-                return Err(ParserError::new(
-                    "try_parse_arg",
-                    format!("expected an argument value for \"@{}\"", key),
-                ));
-            }
-
-            result_args.add(VueArgKind::On, key, value, is_custom_component)?;
-            return Ok(Some(c));
-        }
-
-        if is_v_bind_shortcut {
-            if is_vue_dash_arg {
-                return Err(ParserError::new(
-                    "try_parse_arg",
-                    "cannot use :v-.. as arg name",
-                ));
-            }
-            if !has_value {
-                return Err(ParserError::new(
-                    "try_parse_arg",
-                    format!("expected an argument value for \":{}\"", key),
-                ));
-            }
-
-            result_args.add(VueArgKind::Bind, key, value, is_custom_component)?;
-            return Ok(Some(c));
-        }
-
-        // remove the v- from the argument
-        key.replace_range(..2, "");
-
-        let (expects_argument, arg_kind) = match key.as_str() {
-            "if" => (true, VueArgKind::If),
-            "pre" => (true, VueArgKind::Pre),
-            "else" => (false, VueArgKind::Else),
-            "slot" => (true, VueArgKind::Slot),
-            key if key.starts_with("slot") => (true, VueArgKind::Slot),
-            "text" => (true, VueArgKind::Text),
-            "html" => (true, VueArgKind::Html),
-            "once" => (false, VueArgKind::Once),
-            "model" => (true, VueArgKind::Model),
-            key if key.starts_with("model") => (true, VueArgKind::Model),
-            "cloak" => (true, VueArgKind::Cloak),
-            "else-if" => (true, VueArgKind::ElseIf),
-            "bind" => (true, VueArgKind::Bind),
-            key if key.starts_with("bind:") => (true, VueArgKind::Bind),
-            "on" => (true, VueArgKind::On),
-            key if key.starts_with("on") => (true, VueArgKind::On),
-            _ => (true, VueArgKind::CustomDirective(key.clone())),
-        };
-
-        if has_value != expects_argument {
-            return Err(ParserError::new(
-                "try_parse_arg",
-                if expects_argument {
-                    format!("expected an argument value for \"v-{}\"", key)
-                } else {
-                    format!("expected no argument value for \"v-{}\"", key)
-                },
-            ));
-        }
-
-        key = match key.split_once(':') {
-            Some((_, after)) => after.to_string(),
-            None => String::new(),
-        };
-
-        if !v_else_allowed {
-            match arg_kind {
-                VueArgKind::ElseIf => {
-                    return Err(ParserError::new(
-                        "try_parse_arg",
-                        "cannot use v-else-if here",
-                    ));
-                }
-                VueArgKind::Else => {
-                    return Err(ParserError::new("try_parse_arg", "cannot use v-else here"));
-                }
-                _ => {}
-            }
-        }
-
-        result_args.add(arg_kind, key, value, is_custom_component)?;
-        Ok(Some(c))
-    } else {
-        let value_as_js: String = if has_value {
-            // Parse a static argument
-            let value_location = match p.must_read_one()? {
-                '"' => {
-                    let start = p.current_char;
-                    p.parse_quotes(QuoteKind::HTMLDouble, &mut None)?;
-                    let sl = SourceLocation(start, p.current_char - 1);
-                    c = p.must_read_one()?;
-                    sl
-                }
-                '\'' => {
-                    let start = p.current_char;
-                    p.parse_quotes(QuoteKind::HTMLSingle, &mut None)?;
-                    let sl = SourceLocation(start, p.current_char - 1);
-                    c = p.must_read_one()?;
-                    sl
-                }
-                _ => {
-                    let start = p.current_char - 1;
-                    loop {
-                        c = p.must_read_one()?;
-                        match c {
-                            '>' | '/' => {
-                                break;
-                            }
-                            c if is_space(c) => {
-                                break;
-                            }
-                            _ => {}
-                        }
-                    }
-                    SourceLocation(start, p.current_char - 1)
-                }
-            };
-
-            let mut s = String::new();
-            s.push('"');
-            for c in value_location.chars(p) {
-                match c {
-                    '\\' => {
-                        s.push('\\');
-                        s.push('\\');
-                    }
-                    '"' => {
-                        s.push('\\');
-                        s.push('"');
-                    }
-                    c => s.push(*c),
-                }
-            }
-            s.push('"');
-            s
-        } else {
-            String::from("true")
-        };
-
-        result_args.add(
-            VueArgKind::Default,
-            key_location.string(p),
-            value_as_js,
-            is_custom_component,
-        )?;
-        Ok(Some(c))
-    }
-}
-
 pub fn compile(p: &mut Parser) -> Result<Vec<Child>, ParserError> {
     let mut compile_result = Child::parse_children(p, &mut Vec::new())?;
     loop {
@@ -556,8 +153,8 @@ impl Child {
 
                     if let Some(modifier) = tag.args.modifier.as_ref() {
                         inside_v_if = match modifier {
-                            VueTagModifier::If(_) => true,
-                            VueTagModifier::ElseIf(_) => true,
+                            arg::VueTagModifier::If(_) => true,
+                            arg::VueTagModifier::ElseIf(_) => true,
                             _ => false,
                         };
                     } else {
@@ -682,7 +279,7 @@ impl Child {
         if let Child::Tag(tag, _) = self {
             if let Some(modifier) = tag.args.modifier.as_ref() {
                 match modifier {
-                    VueTagModifier::ElseIf(_) | VueTagModifier::Else => return true,
+                    arg::VueTagModifier::ElseIf(_) | arg::VueTagModifier::Else => return true,
                     _ => {}
                 }
             }
@@ -693,7 +290,7 @@ impl Child {
     pub fn is_v_for(&self) -> bool {
         if let Child::Tag(tag, _) = self {
             if let Some(modifier) = tag.args.modifier.as_ref() {
-                if let VueTagModifier::For(_) = modifier {
+                if let arg::VueTagModifier::For(_) = modifier {
                     return true;
                 }
             }
@@ -853,7 +450,7 @@ pub fn is_tag_name_a_custom_component(parser: &Parser, tag_name: &SourceLocation
 #[derive(Debug, Clone)]
 pub struct VueTagArgs {
     pub new_local_variables: Option<Vec<String>>,
-    pub modifier: Option<VueTagModifier>,
+    pub modifier: Option<arg::VueTagModifier>,
     pub has_js_component_args: bool,
 
     // Same API as `v-bind:class`, accepting either
@@ -972,13 +569,13 @@ impl VueTagArgs {
 
     fn add(
         &mut self,
-        kind: VueArgKind,
+        kind: arg::VueArgKind,
         key: String,
         value_as_js: String,
         is_custom_component: bool,
     ) -> Result<(), ParserError> {
         let set_has_js_component_args = match kind {
-            VueArgKind::Default | VueArgKind::Bind => {
+            arg::VueArgKind::Default | arg::VueArgKind::Bind => {
                 match key.as_str() {
                     "class" => self.class = Some(value_as_js),
                     "style" => self.style = Some(value_as_js),
@@ -989,37 +586,41 @@ impl VueTagArgs {
                 };
                 true
             }
-            VueArgKind::On => {
+            arg::VueArgKind::On => {
                 add_or_set(&mut self.on, (key, value_as_js));
                 true
             }
-            VueArgKind::Text => {
+            arg::VueArgKind::Text => {
                 add_or_set(
                     &mut self.dom_props,
                     (String::from("textContent"), value_as_js),
                 );
                 true
             }
-            VueArgKind::Html => {
+            arg::VueArgKind::Html => {
                 add_or_set(
                     &mut self.dom_props,
                     (String::from("innerHTML"), value_as_js),
                 );
                 true
             }
-            VueArgKind::If => {
-                self.set_modifier(VueTagModifier::If(value_as_js))?;
+            arg::VueArgKind::If => {
+                self.set_modifier(arg::VueTagModifier::If(value_as_js))?;
                 false
             }
-            VueArgKind::Else => {
-                self.set_modifier(VueTagModifier::Else)?;
+            arg::VueArgKind::Else => {
+                self.set_modifier(arg::VueTagModifier::Else)?;
                 false
             }
-            VueArgKind::ElseIf => {
-                self.set_modifier(VueTagModifier::ElseIf(value_as_js))?;
+            arg::VueArgKind::ElseIf => {
+                self.set_modifier(arg::VueTagModifier::ElseIf(value_as_js))?;
                 false
             }
-            VueArgKind::Model => {
+            arg::VueArgKind::For => {
+                panic!("this should never be called, it's a special value");
+                // false
+            }
+            arg::VueArgKind::Model => {
                 add_or_set(
                     &mut self.on,
                     (
@@ -1040,23 +641,23 @@ impl VueTagArgs {
                 add_or_set(&mut self.directives, (String::from("model"), value_as_js));
                 true
             }
-            VueArgKind::Slot => {
+            arg::VueArgKind::Slot => {
                 todo!("Slot");
                 // true
             }
-            VueArgKind::Pre => {
+            arg::VueArgKind::Pre => {
                 todo!("Pre");
                 // true
             }
-            VueArgKind::Cloak => {
+            arg::VueArgKind::Cloak => {
                 todo!("Cloak");
                 // true
             }
-            VueArgKind::Once => {
+            arg::VueArgKind::Once => {
                 todo!("Once");
                 // true
             }
-            VueArgKind::CustomDirective(directive) => {
+            arg::VueArgKind::CustomDirective(directive) => {
                 add_or_set(&mut self.directives, (directive, value_as_js));
                 true
             }
@@ -1066,7 +667,7 @@ impl VueTagArgs {
         }
         Ok(())
     }
-    fn set_modifier(&mut self, to: VueTagModifier) -> Result<(), ParserError> {
+    fn set_modifier(&mut self, to: arg::VueTagModifier) -> Result<(), ParserError> {
         if let Some(already_set_modifier) = self.modifier.as_ref() {
             Err(ParserError::new(
                 "VueTagArgs::add",
@@ -1081,244 +682,4 @@ impl VueTagArgs {
             Ok(())
         }
     }
-}
-
-pub enum VueArgKind {
-    Default,
-    Bind,
-    On,
-    Text,
-    Html,
-    If,
-    Else,
-    ElseIf,
-    // For, // This one is handled specially
-    Model,
-    Slot,
-    Pre,
-    Cloak,
-    Once,
-    CustomDirective(String),
-}
-
-#[derive(Debug, Clone)]
-pub enum VueTagModifier {
-    For(ParsedVFor),
-    If(String),
-    ElseIf(String),
-    Else,
-}
-
-impl VueTagModifier {
-    fn kind(&self) -> &'static str {
-        match self {
-            Self::For(_) => "v-for",
-            Self::If(_) => "v-if",
-            Self::ElseIf(_) => "v-else-if",
-            Self::Else => "v-else",
-        }
-    }
-}
-
-fn new_try_parse_arg(p: &mut Parser, mut c: char) -> Result<Option<char>, ParserError> {
-    if !is_start_of_arg(c) {
-        return Ok(None);
-    }
-
-    let (name_result, next_c) = parse_arg_name(p, c)?;
-    c = next_c;
-
-    let (expect_value, target_allowed, modifier_allowed, arg_kind) = match name_result.name.as_str()
-    {
-        "v-if" => (ExpectValue::Yes, false, false, VueArgKind::If),
-        "v-pre" => (ExpectValue::Yes, false, false, VueArgKind::Pre),
-        "v-else" => (ExpectValue::No, false, false, VueArgKind::Else),
-        "v-slot" => (ExpectValue::Yes, true, false, VueArgKind::Slot),
-        "v-text" => (ExpectValue::Yes, false, false, VueArgKind::Text),
-        "v-html" => (ExpectValue::Yes, false, false, VueArgKind::Html),
-        "v-once" => (ExpectValue::No, false, false, VueArgKind::Once),
-        "v-model" => (ExpectValue::Yes, true, true, VueArgKind::Model),
-        "v-cloak" => (ExpectValue::Yes, false, false, VueArgKind::Cloak),
-        "v-else-if" => (ExpectValue::Yes, false, false, VueArgKind::ElseIf),
-        "v-bind" => (ExpectValue::Yes, true, true, VueArgKind::Bind),
-        "v-on" => (ExpectValue::Yes, true, true, VueArgKind::On),
-        name if name.starts_with("v-") => (
-            ExpectValue::Yes,
-            true,
-            true,
-            VueArgKind::CustomDirective(name.to_string()),
-        ),
-        _ => (ExpectValue::Both, false, false, VueArgKind::Default),
-    };
-
-    if !target_allowed && name_result.target.is_some() {
-        return Err(ParserError::new(
-            "try_parse_arg",
-            format!(
-                "target set on argument {} but is not allowed",
-                name_result.name
-            ),
-        ));
-    }
-
-    if !modifier_allowed && name_result.modifiers.is_some() {
-        return Err(ParserError::new(
-            "try_parse_arg",
-            format!(
-                "modifier set on argument {} but is not allowed",
-                name_result.name
-            ),
-        ));
-    }
-
-    match expect_value {
-        ExpectValue::Yes if !name_result.parse_value_next => {
-            return Err(ParserError::new(
-                "try_parse_arg",
-                format!(
-                    "expected an argument value for {} but got none",
-                    name_result.name
-                ),
-            ))
-        }
-        ExpectValue::No if name_result.parse_value_next => {
-            return Err(ParserError::new(
-                "try_parse_arg",
-                format!(
-                    "expected NO argument value for {} but got one",
-                    name_result.name
-                ),
-            ))
-        }
-        _ => {}
-    };
-
-    Ok(Some(c))
-}
-
-fn is_start_of_arg(c: char) -> bool {
-    match c {
-        '@' | ':' | 'a'..='z' | 'A'..='Z' | '0'..='9' | '_' => true,
-        _ => false,
-    }
-}
-
-enum ExpectValue {
-    Yes,
-    No,
-    Both,
-}
-
-struct ParseArgNameResult {
-    parse_value_next: bool,
-    // name details
-    name: String,                   // `v-bind` of `v-bind:some_value.trim`
-    target: Option<String>,         // `some_value` of `v-bind:some_value.trim`
-    modifiers: Option<Vec<String>>, // `trim` of `v-bind:some_value.trim`
-}
-
-fn parse_arg_name(p: &mut Parser, mut c: char) -> Result<(ParseArgNameResult, char), ParserError> {
-    let invalid_character_err = |c: char| {
-        Err(ParserError::new(
-            "try_parse_arg",
-            format!("invalid argument character '{}'", c.to_string()),
-        ))
-    };
-
-    let mut name = String::new();
-
-    let mut parse_target_next = false;
-    let mut parse_modifier_next = false;
-    let mut parse_value_next = false;
-
-    match c {
-        '@' => {
-            name = String::from("v-on");
-            parse_target_next = true;
-        }
-        ':' => {
-            name = String::from("v-bind");
-            parse_target_next = true;
-        }
-        'a'..='z' | 'A'..='Z' | '0'..='9' | '_' => {
-            name.push(c);
-            loop {
-                c = p.must_read_one()?;
-                match c {
-                    'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' => name.push(c),
-                    ':' => {
-                        parse_target_next = true;
-                        break;
-                    }
-                    '.' => {
-                        parse_modifier_next = true;
-                        break;
-                    }
-                    '=' => {
-                        parse_value_next = true;
-                        break;
-                    }
-                    c => return invalid_character_err(c),
-                }
-            }
-        }
-        c => return invalid_character_err(c),
-    };
-
-    let target: Option<String> = if parse_target_next {
-        let mut target = String::new();
-        loop {
-            c = p.must_read_one()?;
-            match c {
-                'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' => target.push(c),
-                '.' => {
-                    parse_modifier_next = true;
-                    break;
-                }
-                '=' => {
-                    parse_value_next = true;
-                    break;
-                }
-                c => return invalid_character_err(c),
-            }
-        }
-        Some(target)
-    } else {
-        None
-    };
-
-    let modifiers: Option<Vec<String>> = if parse_modifier_next {
-        let mut modifiers: Vec<String> = Vec::new();
-        'outer: loop {
-            let mut modifier = String::new();
-            loop {
-                c = p.must_read_one()?;
-                match c {
-                    'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' => modifier.push(c),
-                    '.' => {
-                        break;
-                    }
-                    '=' => {
-                        parse_value_next = true;
-                        break 'outer;
-                    }
-                    c => return invalid_character_err(c),
-                }
-            }
-            modifiers.push(modifier);
-        }
-        Some(modifiers)
-    } else {
-        None
-    };
-
-    Ok((
-        ParseArgNameResult {
-            parse_value_next: parse_value_next,
-            name,
-            target,
-            modifiers,
-        },
-        c,
-    ))
 }

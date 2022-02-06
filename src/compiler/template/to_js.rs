@@ -1,6 +1,6 @@
 use super::super::utils::write_str;
 use super::super::{js, Parser};
-use super::{Child, VueTagArgs, VueTagModifier};
+use super::{arg::VueTagModifier, Child, VueTagArgs};
 
 /*
 _c('div', [
@@ -126,12 +126,12 @@ pub fn child_to_js(child: &Child, p: &Parser, resp: &mut Vec<char>) -> ChildToJs
                     }
                     VueTagModifier::If(js_check) => {
                         artifacts.opened_inline_if_else = true;
-                        write_str(js_check, resp);
+                        write_str(&js_check, resp);
                         resp.push('?');
                     }
                     VueTagModifier::ElseIf(js_check) => {
                         artifacts.opened_inline_if_else = true;
-                        write_str(js_check, resp);
+                        write_str(&js_check, resp);
                         resp.push('?');
                     }
                     VueTagModifier::Else => {} // Do nothing
