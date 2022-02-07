@@ -81,7 +81,14 @@ fn new_try_parse(
     };
 
     match arg_kind {
-        VueArgKind::Default => {}
+        VueArgKind::Default => {
+            let (contents, next_c) = might_get_arg_value(p, &name_result, c)?;
+            c = next_c;
+            result.set_default_or_bind(
+                name_result,
+                escape_string_to_js_string_or_undefined(contents),
+            );
+        }
         VueArgKind::Bind => {}
         VueArgKind::On => {}
         VueArgKind::Text => {}
@@ -101,6 +108,72 @@ fn new_try_parse(
     Ok(Some(c))
 }
 
+fn escape_string_to_js_string_or_undefined(input: Option<String>) -> String {
+    if let Some(mut input) = input {
+        escape_string_to_js_string(&mut input);
+        input
+    } else {
+        String::from("undefined")
+    }
+}
+
+fn escape_string_to_js_string(input: &mut String) {
+    input.push('"');
+    let input_len = input.len();
+
+    for idx in (0..input_len).rev().skip(1) {
+        match input.get(idx..idx + 1) {
+            Some("\"") | Some("\\") => {
+                input.insert(idx, '\\');
+            }
+            _ => {}
+        }
+    }
+    input.insert(0, '"');
+}
+
+fn might_get_arg_value(
+    p: &mut Parser,
+    name: &ParseArgNameResult,
+    c: char,
+) -> Result<(Option<String>, char), ParserError> {
+    Ok(if name.parse_value_next {
+        let (contents, c) = get_arg_value(p)?;
+        (Some(contents), c)
+    } else {
+        (None, c)
+    })
+}
+
+fn get_arg_value(p: &mut Parser) -> Result<(String, char), ParserError> {
+    let mut c = p.must_read_one_skip_spacing()?;
+    let quote = match c {
+        '\'' => '\'',
+        '"' => '"',
+        _ => {
+            let mut resp = c.to_string();
+            loop {
+                c = p.must_read_one()?;
+                if is_space(c) || c == '/' || c == '>' {
+                    return Ok((resp, c));
+                }
+                resp.push(c);
+            }
+        }
+    };
+
+    let mut resp = String::new();
+    loop {
+        c = p.must_read_one()?;
+        if c == quote {
+            break;
+        }
+        resp.push(c);
+    }
+
+    Ok((resp, p.must_read_one()?))
+}
+
 fn is_start_of_arg(c: char) -> bool {
     match c {
         '@' | ':' | 'a'..='z' | 'A'..='Z' | '0'..='9' | '_' => true,
@@ -114,12 +187,12 @@ enum ExpectValue {
     Both,
 }
 
-struct ParseArgNameResult {
+pub struct ParseArgNameResult {
     parse_value_next: bool,
     // name details
-    name: String,                   // `v-bind` of `v-bind:some_value.trim`
-    target: Option<String>,         // `some_value` of `v-bind:some_value.trim`
-    modifiers: Option<Vec<String>>, // `trim` of `v-bind:some_value.trim`
+    pub name: String,                   // `v-bind` of `v-bind:some_value.trim`
+    pub target: Option<String>,         // `some_value` of `v-bind:some_value.trim`
+    pub modifiers: Option<Vec<String>>, // `trim` of `v-bind:some_value.trim`
 }
 
 fn parse_arg_name(p: &mut Parser, mut c: char) -> Result<(ParseArgNameResult, char), ParserError> {
@@ -448,12 +521,8 @@ pub fn try_parse(
                     loop {
                         c = p.must_read_one()?;
                         match c {
-                            '>' | '/' => {
-                                break;
-                            }
-                            c if is_space(c) => {
-                                break;
-                            }
+                            '>' | '/' => break,
+                            c if is_space(c) => break,
                             _ => {}
                         }
                     }

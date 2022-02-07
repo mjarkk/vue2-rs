@@ -567,6 +567,17 @@ impl VueTagArgs {
         Some(resp)
     }
 
+    fn set_default_or_bind(&mut self, key: arg::ParseArgNameResult, value_as_js: String) {
+        match key.name.as_str() {
+            "class" => self.class = Some(value_as_js),
+            "style" => self.style = Some(value_as_js),
+            "slot" => self.slot = Some(value_as_js),
+            "key" => self.key = Some(value_as_js),
+            "ref" => self.ref_ = Some(value_as_js),
+            _ => add_or_set(&mut self.attrs_or_props, (key.name.clone(), value_as_js)),
+        };
+    }
+
     fn add(
         &mut self,
         kind: arg::VueArgKind,
