@@ -15,9 +15,7 @@ pub fn parse_tag(p: &mut Parser, v_else_allowed: bool) -> Result<Tag, ParserErro
     };
 
     let mut is_close_tag = false;
-    let mut c = p
-        .seek_one()
-        .ok_or(ParserError::eof("parse_tag check closure tag"))?;
+    let mut c = p.must_seek_one()?;
 
     if c == '/' {
         tag.type_ = TagType::Close;
@@ -32,7 +30,7 @@ pub fn parse_tag(p: &mut Parser, v_else_allowed: bool) -> Result<Tag, ParserErro
             let c = p.must_read_one()?;
             if doctype_c != c {
                 return Err(ParserError::new(
-                    "parse_tag",
+                    p,
                     format!(
                         "expected '{}' of \"<!DOCTYPE\" but got '{}'",
                         doctype_c.to_string(),
@@ -64,7 +62,7 @@ pub fn parse_tag(p: &mut Parser, v_else_allowed: bool) -> Result<Tag, ParserErro
     }
 
     if tag.name.1 == 0 {
-        return Err(ParserError::new("parse_tag", "expected tag name"));
+        return Err(ParserError::new(p, "expected tag name"));
     }
 
     tag.is_custom_component = is_tag_name_a_custom_component(p, &tag.name);
@@ -81,14 +79,14 @@ pub fn parse_tag(p: &mut Parser, v_else_allowed: bool) -> Result<Tag, ParserErro
             '/' => {
                 if is_close_tag {
                     return Err(ParserError::new(
-                        "parse_tag",
-                        "/ not allowed after name in closeing tag",
+                        p,
+                        "/ not allowed after name in closing tag",
                     ));
                 }
                 c = p.must_read_one_skip_spacing()?;
                 if c != '>' {
                     return Err(ParserError::new(
-                        "parse_tag",
+                        p,
                         format!("expected > but got '{}'", c.to_string()),
                     ));
                 }
@@ -99,7 +97,7 @@ pub fn parse_tag(p: &mut Parser, v_else_allowed: bool) -> Result<Tag, ParserErro
             c if is_space(c) => {}
             c => {
                 return Err(ParserError::new(
-                    "parse_tag",
+                    p,
                     format!("unexpected character '{}'", c.to_string()),
                 ))
             }
@@ -580,6 +578,7 @@ impl VueTagArgs {
 
     fn add(
         &mut self,
+        p: &Parser,
         kind: arg::VueArgKind,
         key: String,
         value_as_js: String,
@@ -616,15 +615,15 @@ impl VueTagArgs {
                 true
             }
             arg::VueArgKind::If => {
-                self.set_modifier(arg::VueTagModifier::If(value_as_js))?;
+                self.set_modifier(p, arg::VueTagModifier::If(value_as_js))?;
                 false
             }
             arg::VueArgKind::Else => {
-                self.set_modifier(arg::VueTagModifier::Else)?;
+                self.set_modifier(p, arg::VueTagModifier::Else)?;
                 false
             }
             arg::VueArgKind::ElseIf => {
-                self.set_modifier(arg::VueTagModifier::ElseIf(value_as_js))?;
+                self.set_modifier(p, arg::VueTagModifier::ElseIf(value_as_js))?;
                 false
             }
             arg::VueArgKind::For => {
@@ -678,10 +677,10 @@ impl VueTagArgs {
         }
         Ok(())
     }
-    fn set_modifier(&mut self, to: arg::VueTagModifier) -> Result<(), ParserError> {
+    fn set_modifier(&mut self, p: &Parser, to: arg::VueTagModifier) -> Result<(), ParserError> {
         if let Some(already_set_modifier) = self.modifier.as_ref() {
             Err(ParserError::new(
-                "VueTagArgs::add",
+                p,
                 format!(
                     "cannot set {} on a tag that also has {}",
                     to.kind(),

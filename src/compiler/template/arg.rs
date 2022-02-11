@@ -40,7 +40,7 @@ fn new_try_parse(
 
     if !target_allowed && name_result.target.is_some() {
         return Err(ParserError::new(
-            "try_parse_arg",
+            p,
             format!(
                 "target set on argument {} but is not allowed",
                 name_result.name
@@ -50,7 +50,7 @@ fn new_try_parse(
 
     if !modifier_allowed && name_result.modifiers.is_some() {
         return Err(ParserError::new(
-            "try_parse_arg",
+            p,
             format!(
                 "modifier set on argument {} but is not allowed",
                 name_result.name
@@ -61,7 +61,7 @@ fn new_try_parse(
     match expect_value {
         ExpectValue::Yes if !name_result.parse_value_next => {
             return Err(ParserError::new(
-                "try_parse_arg",
+                p,
                 format!(
                     "expected an argument value for {} but got none",
                     name_result.name
@@ -70,7 +70,7 @@ fn new_try_parse(
         }
         ExpectValue::No if name_result.parse_value_next => {
             return Err(ParserError::new(
-                "try_parse_arg",
+                p,
                 format!(
                     "expected NO argument value for {} but got one",
                     name_result.name
@@ -196,9 +196,9 @@ pub struct ParseArgNameResult {
 }
 
 fn parse_arg_name(p: &mut Parser, mut c: char) -> Result<(ParseArgNameResult, char), ParserError> {
-    let invalid_character_err = |c: char| {
+    let invalid_character_err = |p: &mut Parser, c: char| {
         Err(ParserError::new(
-            "try_parse_arg",
+            p,
             format!("invalid argument character '{}'", c.to_string()),
         ))
     };
@@ -236,11 +236,11 @@ fn parse_arg_name(p: &mut Parser, mut c: char) -> Result<(ParseArgNameResult, ch
                         parse_value_next = true;
                         break;
                     }
-                    c => return invalid_character_err(c),
+                    c => return invalid_character_err(p, c),
                 }
             }
         }
-        c => return invalid_character_err(c),
+        c => return invalid_character_err(p, c),
     };
 
     let target: Option<String> = if parse_target_next {
@@ -257,7 +257,7 @@ fn parse_arg_name(p: &mut Parser, mut c: char) -> Result<(ParseArgNameResult, ch
                     parse_value_next = true;
                     break;
                 }
-                c => return invalid_character_err(c),
+                c => return invalid_character_err(p, c),
             }
         }
         Some(target)
@@ -280,7 +280,7 @@ fn parse_arg_name(p: &mut Parser, mut c: char) -> Result<(ParseArgNameResult, ch
                         parse_value_next = true;
                         break 'outer;
                     }
-                    c => return invalid_character_err(c),
+                    c => return invalid_character_err(p, c),
                 }
             }
             modifiers.push(modifier);
@@ -343,7 +343,7 @@ pub fn try_parse(
             }
             c => {
                 return Err(ParserError::new(
-                    "try_parse_arg",
+                    p,
                     format!("unexpected argument character '{}'", c.to_string()),
                 ))
             }
@@ -361,7 +361,7 @@ pub fn try_parse(
             // V-for has a special value we cannot parse like the others
             if !has_value {
                 return Err(ParserError::new(
-                    "try_parse_arg",
+                    p,
                     "expected an argument value for \"v-for\"",
                 ));
             }
@@ -376,7 +376,7 @@ pub fn try_parse(
                 }
             }
             result_args.new_local_variables = Some(local_variables_list);
-            result_args.set_modifier(VueTagModifier::For(result))?;
+            result_args.set_modifier(p, VueTagModifier::For(result))?;
 
             c = p.must_read_one()?;
             return Ok(Some(c));
@@ -388,7 +388,7 @@ pub fn try_parse(
                 '"' | '\'' => {} // Ok
                 c => {
                     return Err(ParserError::new(
-                        "try_parse_arg",
+                        p,
                         format!(
                             "expected opening of argument value ('\"' or \"'\") but got '{}'",
                             c.to_string()
@@ -408,37 +408,31 @@ pub fn try_parse(
 
         if is_v_on_shortcut {
             if is_vue_dash_arg {
-                return Err(ParserError::new(
-                    "try_parse_arg",
-                    "cannot use @v-.. as arg name",
-                ));
+                return Err(ParserError::new(p, "cannot use @v-.. as arg name"));
             }
             if !has_value {
                 return Err(ParserError::new(
-                    "try_parse_arg",
+                    p,
                     format!("expected an argument value for \"@{}\"", key),
                 ));
             }
 
-            result_args.add(VueArgKind::On, key, value, is_custom_component)?;
+            result_args.add(p, VueArgKind::On, key, value, is_custom_component)?;
             return Ok(Some(c));
         }
 
         if is_v_bind_shortcut {
             if is_vue_dash_arg {
-                return Err(ParserError::new(
-                    "try_parse_arg",
-                    "cannot use :v-.. as arg name",
-                ));
+                return Err(ParserError::new(p, "cannot use :v-.. as arg name"));
             }
             if !has_value {
                 return Err(ParserError::new(
-                    "try_parse_arg",
+                    p,
                     format!("expected an argument value for \":{}\"", key),
                 ));
             }
 
-            result_args.add(VueArgKind::Bind, key, value, is_custom_component)?;
+            result_args.add(p, VueArgKind::Bind, key, value, is_custom_component)?;
             return Ok(Some(c));
         }
 
@@ -467,7 +461,7 @@ pub fn try_parse(
 
         if has_value != expects_argument {
             return Err(ParserError::new(
-                "try_parse_arg",
+                p,
                 if expects_argument {
                     format!("expected an argument value for \"v-{}\"", key)
                 } else {
@@ -484,19 +478,16 @@ pub fn try_parse(
         if !v_else_allowed {
             match arg_kind {
                 VueArgKind::ElseIf => {
-                    return Err(ParserError::new(
-                        "try_parse_arg",
-                        "cannot use v-else-if here",
-                    ));
+                    return Err(ParserError::new(p, "cannot use v-else-if here"));
                 }
                 VueArgKind::Else => {
-                    return Err(ParserError::new("try_parse_arg", "cannot use v-else here"));
+                    return Err(ParserError::new(p, "cannot use v-else here"));
                 }
                 _ => {}
             }
         }
 
-        result_args.add(arg_kind, key, value, is_custom_component)?;
+        result_args.add(p, arg_kind, key, value, is_custom_component)?;
         Ok(Some(c))
     } else {
         let value_as_js: String = if has_value {
@@ -552,6 +543,7 @@ pub fn try_parse(
         };
 
         result_args.add(
+            p,
             VueArgKind::Default,
             key_location.string(p),
             value_as_js,
@@ -575,7 +567,7 @@ fn parse_v_for_value(p: &mut Parser) -> Result<ParsedVFor, ParserError> {
         '"' | '\'' => {} // Ok
         c => {
             return Err(ParserError::new(
-                "parse_v_for_value",
+                p,
                 format!(
                     "expected opening of argument value ('\"' or \"'\") but got '{}'",
                     c.to_string()
@@ -595,7 +587,7 @@ fn parse_v_for_value(p: &mut Parser) -> Result<ParsedVFor, ParserError> {
             let c = p.must_read_one_skip_spacing()?;
             if !c.is_ascii_lowercase() && !c.is_ascii_uppercase() && c <= '}' {
                 return Err(ParserError::new(
-                    "parse_v_for_value",
+                    p,
                     format!("unexpected character '{}'", c.to_string()),
                 ));
             }
@@ -605,7 +597,7 @@ fn parse_v_for_value(p: &mut Parser) -> Result<ParsedVFor, ParserError> {
         }
         c => {
             return Err(ParserError::new(
-                "parse_v_for_value",
+                p,
                 format!("unexpected character '{}'", c.to_string()),
             ))
         }
@@ -656,7 +648,7 @@ fn parse_v_for_value(p: &mut Parser) -> Result<ParsedVFor, ParserError> {
 
         if c != ')' {
             return Err(ParserError::new(
-                "parse_v_for_value",
+                p,
                 format!("expected ')' but got '{}'", c.to_string()),
             ));
         }
@@ -665,7 +657,7 @@ fn parse_v_for_value(p: &mut Parser) -> Result<ParsedVFor, ParserError> {
 
     if c != 'i' {
         return Err(ParserError::new(
-            "parse_v_for_value",
+            p,
             format!(
                 "expected v-for value to be \".. in ..\" but got '{}'",
                 c.to_string()
@@ -675,7 +667,7 @@ fn parse_v_for_value(p: &mut Parser) -> Result<ParsedVFor, ParserError> {
     c = p.must_read_one()?;
     if c != 'n' {
         return Err(ParserError::new(
-            "parse_v_for_value",
+            p,
             format!(
                 "expected v-for value to be \".. in ..\" but got '{}'",
                 c.to_string()
@@ -685,7 +677,7 @@ fn parse_v_for_value(p: &mut Parser) -> Result<ParsedVFor, ParserError> {
     c = p.must_read_one()?;
     if !is_space(c) {
         return Err(ParserError::new(
-            "parse_v_for_value",
+            p,
             format!(
                 "expected v-for value to be \".. in ..\" but got '{}'",
                 c.to_string()

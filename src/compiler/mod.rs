@@ -70,7 +70,10 @@ impl Parser {
     }
 
     fn must_seek_one(&mut self) -> Result<char, ParserError> {
-        self.seek_one().ok_or(ParserError::eof("must_seek_one"))
+        match self.seek_one() {
+            Some(v) => Ok(v),
+            None => Err(ParserError::eof(self)),
+        }
     }
 
     fn read_one(&mut self) -> Option<char> {
@@ -80,7 +83,10 @@ impl Parser {
     }
 
     fn must_read_one(&mut self) -> Result<char, ParserError> {
-        self.read_one().ok_or(ParserError::eof("must_read_one"))
+        match self.read_one() {
+            Some(v) => Ok(v),
+            None => Err(ParserError::eof(self)),
+        }
     }
 
     fn read_one_skip_spacing(&mut self) -> Option<char> {
@@ -108,8 +114,8 @@ impl Parser {
                     let top_level_tag = self.parse_top_level_tag()?;
                     match top_level_tag.1.type_ {
                         TagType::DocType => {},
-                        TagType::Close => return Err(ParserError::new("execute", "found tag closure without open")),
-                        TagType::OpenAndClose => return Err(ParserError::new("execute", "tag type not allowed on top level")),
+                        TagType::Close => return Err(ParserError::new(self, "found tag closure without open")),
+                        TagType::OpenAndClose => return Err(ParserError::new(self, "tag type not allowed on top level")),
                         TagType::Open => {},
                     };
 
@@ -119,7 +125,7 @@ impl Parser {
                         TopLevelTag::DocType => continue,
                         TopLevelTag::Template => {
                             if self.template.is_some() {
-                                return Err(ParserError::new("execute", "can't have multiple templates in your code"));
+                                return Err(ParserError::new(self, "can't have multiple templates in your code"));
                             }
                             let children = template::compile(self)?;
 
@@ -130,7 +136,7 @@ impl Parser {
                         },
                         TopLevelTag::Script => {
                             if self.script.is_some() {
-                                return Err(ParserError::new("execute", "can't have multiple scripts in your code"));
+                                return Err(ParserError::new(self, "can't have multiple scripts in your code"));
                             }
                             let script_start = self.current_char;
 
@@ -160,7 +166,7 @@ impl Parser {
                         },
                     }
                 },
-                c => return Err(ParserError::new("execute", format!("found invalid character in source: '{}', expected <template ..> <script ..> or <style ..>", c))),
+                c => return Err(ParserError::new(self, format!("found invalid character in source: '{}', expected <template ..> <script ..> or <style ..>", c))),
             };
         }
         Ok(())
@@ -169,10 +175,7 @@ impl Parser {
     fn look_for(&mut self, data: Vec<char>) -> Result<SourceLocation, ParserError> {
         let data_len = data.len();
         if data_len == 0 {
-            return Err(ParserError::new(
-                "look_for",
-                "cannot look for zero length data",
-            ));
+            return Err(ParserError::new(self, "cannot look for zero length data"));
         }
         'outerLoop: loop {
             if self.must_read_one()? != data[0] {
@@ -203,7 +206,7 @@ impl Parser {
             TopLevelTag::Style
         } else {
             return Err(ParserError::new(
-                "parse_top_level_tag",
+                self,
                 format!(
                     "tag <{}> is not allowed on the top level ",
                     parsed_tag.name.string(self)

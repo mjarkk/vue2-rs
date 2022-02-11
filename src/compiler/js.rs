@@ -51,7 +51,7 @@ pub fn parse_template_var(p: &mut Parser) -> Result<Vec<SourceLocation>, ParserE
     let c = p.must_read_one()?;
     if c != '}' {
         Err(ParserError::new(
-            "compile_template_var",
+            p,
             format!("expected '{}' but got '{}'", "}", c.to_string()),
         ))
     } else {
@@ -130,7 +130,7 @@ pub fn compile_script_content(p: &mut Parser) -> Result<Option<SourceLocation>, 
                                     // We expect this type
                                 } else {
                                     return Err(ParserError::new(
-                                        "parse_script_content",
+                                        p,
                                         format!(
                                             "expected script closure but got {}",
                                             tag.type_.to_string()
@@ -141,7 +141,7 @@ pub fn compile_script_content(p: &mut Parser) -> Result<Option<SourceLocation>, 
                                 // Tag needs to be a script tag
                                 if !tag.name.eq(p, &mut "script".chars()) {
                                     return Err(ParserError::new(
-                                        "parse_script_content",
+                                        p,
                                         format!(
                                             "expected script closure but got {}",
                                             tag.name.string(p)
