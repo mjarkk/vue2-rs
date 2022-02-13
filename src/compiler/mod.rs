@@ -113,16 +113,15 @@ impl Parser {
                 '<' => {
                     let top_level_tag = self.parse_top_level_tag()?;
                     match top_level_tag.1.type_ {
-                        TagType::DocType => {},
-                        TagType::Close => return Err(ParserError::new(self, "found tag closure without open")),
-                        TagType::OpenAndClose => return Err(ParserError::new(self, "tag type not allowed on top level")),
-                        TagType::Open => {},
+                        template::TagType::Comment | template::TagType::DocType | template::TagType::Open => {},
+                        template::TagType::Close => return Err(ParserError::new(self, "found tag closure without open")),
+                        template::TagType::OpenAndClose => return Err(ParserError::new(self, "tag type not allowed on top level")),
                     };
 
                     let lang: Option<String> = top_level_tag.1.args.has_attr_or_prop_with_string("lang");
 
                     match top_level_tag.0 {
-                        TopLevelTag::DocType => continue,
+                        TopLevelTag::DocType | TopLevelTag::Comment => continue,
                         TopLevelTag::Template => {
                             if self.template.is_some() {
                                 return Err(ParserError::new(self, "can't have multiple templates in your code"));
@@ -194,8 +193,11 @@ impl Parser {
 
     fn parse_top_level_tag(&mut self) -> Result<(TopLevelTag, template::Tag), ParserError> {
         let parsed_tag = template::parse_tag(self, false)?;
-        if let TagType::DocType = parsed_tag.type_ {
-            return Ok((TopLevelTag::DocType, parsed_tag));
+
+        match parsed_tag.type_ {
+            template::TagType::DocType => return Ok((TopLevelTag::DocType, parsed_tag)),
+            template::TagType::Comment => return Ok((TopLevelTag::Comment, parsed_tag)),
+            _ => {}
         }
 
         let top_level_tag = if parsed_tag.name.eq(self, &mut "template".chars()) {
@@ -385,28 +387,10 @@ impl SourceLocation {
     }
 }
 
-#[derive(Debug, Clone)]
-pub enum TagType {
-    DocType,
-    Open,
-    OpenAndClose,
-    Close,
-}
-
-impl TagType {
-    fn to_string(&self) -> &'static str {
-        match self {
-            Self::DocType => "DOCTYPE",
-            Self::Open => "open",
-            Self::OpenAndClose => "inline",
-            Self::Close => "close",
-        }
-    }
-}
-
 #[derive(Debug)]
 enum TopLevelTag {
     DocType,
+    Comment,
     Template,
     Script,
     Style,

@@ -2,7 +2,7 @@ mod arg;
 pub mod to_js;
 
 use super::utils::is_space;
-use super::{js, Parser, ParserError, SourceLocation, TagType};
+use super::{js, Parser, ParserError, SourceLocation};
 
 // parse_tag is expected to be next to the open indicator (<) at the first character of the tag name
 // TODO support upper case tag names
@@ -23,30 +23,53 @@ pub fn parse_tag(p: &mut Parser, v_else_allowed: bool) -> Result<Tag, ParserErro
         p.current_char += 1;
         is_close_tag = true;
     } else if c == '!' {
+        let start_char = p.current_char;
+
         p.current_char += 1;
 
-        let mut doctype = "DOCTYPE ".chars();
-        while let Some(doctype_c) = doctype.next() {
-            let c = p.must_read_one()?;
-            if doctype_c != c {
-                return Err(ParserError::new(
-                    p,
-                    format!(
-                        "expected '{}' of \"<!DOCTYPE\" but got '{}'",
-                        doctype_c.to_string(),
-                        c.to_string()
-                    ),
-                ));
+        match p.must_read_one()? {
+            'D' => {
+                let mut matches_doctype = true;
+                let mut doctype = /*D*/"OCTYPE ".chars();
+                while let Some(doctype_c) = doctype.next() {
+                    let c = p.must_read_one()?;
+                    if doctype_c != c {
+                        matches_doctype = false;
+                        break;
+                    }
+                }
+
+                if matches_doctype {
+                    p.look_for(vec!['>'])?;
+
+                    return Ok(Tag {
+                        type_: TagType::DocType,
+                        name: SourceLocation::empty(),
+                        args: VueTagArgs::new(),
+                        is_custom_component: false,
+                    });
+                }
             }
+            '-' => {
+                if p.must_read_one()? == '-' {
+                    p.look_for(vec!['-', '-', '>'])?;
+
+                    return Ok(Tag {
+                        type_: TagType::Comment,
+                        name: SourceLocation::empty(),
+                        args: VueTagArgs::new(),
+                        is_custom_component: false,
+                    });
+                }
+            }
+            _ => {}
         }
 
-        while p.must_read_one()? != '>' {}
-        return Ok(Tag {
-            type_: TagType::DocType,
-            name: SourceLocation::empty(),
-            args: VueTagArgs::new(),
-            is_custom_component: false,
-        });
+        p.current_char = start_char;
+        return Err(ParserError::new(
+            p,
+            format!("expect html comment (<!-- .. -->) or doctype (<!DOCTYPE ..>)"),
+        ));
     }
 
     // Parse names
@@ -101,6 +124,27 @@ pub fn parse_tag(p: &mut Parser, v_else_allowed: bool) -> Result<Tag, ParserErro
                     format!("unexpected character '{}'", c.to_string()),
                 ))
             }
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum TagType {
+    DocType,
+    Comment,
+    Open,
+    OpenAndClose,
+    Close,
+}
+
+impl TagType {
+    pub fn to_string(&self) -> &'static str {
+        match self {
+            Self::DocType => "DOCTYPE",
+            Self::Comment => "<!-- .. -->",
+            Self::Open => "open",
+            Self::OpenAndClose => "inline",
+            Self::Close => "close",
         }
     }
 }
@@ -217,7 +261,7 @@ impl Child {
                         TagType::OpenAndClose => {
                             resp.push(Self::Tag(tag, Vec::new()));
                         }
-                        TagType::DocType => {} // Skip this tag
+                        TagType::Comment | TagType::DocType => {} // Skip these tag
                     };
                 }
                 CompileAfterTextNode::Var => {

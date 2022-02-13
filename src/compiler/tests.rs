@@ -229,6 +229,25 @@ mod tests {
     }
 
     #[test]
+    fn parse_html_comment() {
+        // Comment above the vue component
+        Parser::new_and_parse(
+            "<!-- <template> This should not be parsed </template> -->
+            <template>
+            </template>",
+        )
+        .unwrap();
+
+        // Comment within the template
+        Parser::new_and_parse(
+            "<template>
+            <!-- <template> This should not be parsed </template> -->
+            </template>",
+        )
+        .unwrap();
+    }
+
+    #[test]
     fn survive_crappy_template() {
         let cases = vec![
             "<div>",            // only an open tag with no closing tag

@@ -9,7 +9,7 @@ This is a project that is in progress
 
 ## TODO List
 
-- [ ] Template
+- Template
   - [x] Basic start and end detection (`<template>..</template>`)
   - [x] Parsing
     - [x] Tags
@@ -37,13 +37,15 @@ This is a project that is in progress
         - [x] Custom (`v-custom-directive`)
     - [ ] Support for `<template>` element
     - [ ] Pug support?
-- [ ] Script
+- Script
   - [x] Basic start and end detection (`<script>..</script>`)
   - [x] Inject JS render function from template
   - [ ] Inject styles
-- [ ] Style
+- Style
   - [x] Basic start and end detection (`<style>..</style>`)
   - [ ] Style parsing
+- Other
+  - [x] Html comments
 
 ## Development
 

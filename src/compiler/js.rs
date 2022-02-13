@@ -1,4 +1,4 @@
-use super::{template, utils::is_space, Parser, ParserError, QuoteKind, SourceLocation, TagType};
+use super::{template, utils::is_space, Parser, ParserError, QuoteKind, SourceLocation};
 
 pub fn add_vm_references(
     p: &Parser,
@@ -126,7 +126,7 @@ pub fn compile_script_content(p: &mut Parser) -> Result<Option<SourceLocation>, 
                             }
                             Ok(tag) => {
                                 // Check tag type, it needs to be </script>, not <script> nor <script />
-                                if let TagType::Close = tag.type_ {
+                                if let template::TagType::Close = tag.type_ {
                                     // We expect this type
                                 } else {
                                     return Err(ParserError::new(
