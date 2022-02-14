@@ -224,12 +224,10 @@ impl Parser {
         kind: QuoteKind,
         global_references: &mut Option<Vec<SourceLocation>>,
     ) -> Result<(), ParserError> {
-        let (quote_char, escape): (char, bool) = match kind {
-            QuoteKind::HTMLDouble => ('"', false),
-            QuoteKind::HTMLSingle => ('\'', false),
-            QuoteKind::JSDouble => ('"', true),
-            QuoteKind::JSSingle => ('\'', true),
-            QuoteKind::JSBacktick => ('`', true),
+        let quote_char = match kind {
+            QuoteKind::JSDouble => '"',
+            QuoteKind::JSSingle => '\'',
+            QuoteKind::JSBacktick => '`',
         };
 
         let is_js_backtick = if let QuoteKind::JSBacktick = kind {
@@ -240,7 +238,7 @@ impl Parser {
 
         loop {
             match self.must_read_one()? {
-                '\\' if escape => {
+                '\\' => {
                     // Skip one char
                     self.must_read_one()?;
                 }
@@ -257,8 +255,6 @@ impl Parser {
 
 #[derive(Debug)]
 enum QuoteKind {
-    HTMLDouble, // "
-    HTMLSingle, // '
     JSDouble,   // "
     JSSingle,   // '
     JSBacktick, // `
@@ -375,16 +371,16 @@ impl SourceLocation {
             }
         }
     }
-    pub fn starts_with(&self, parser: &Parser, mut other: impl Iterator<Item = char>) -> bool {
-        let mut self_iter = self.chars(parser).iter();
-        loop {
-            match (self_iter.next(), other.next()) {
-                (Some(a), Some(b)) if *a == b => continue,
-                (_, None) => return true,
-                _ => return false,
-            }
-        }
-    }
+    // pub fn starts_with(&self, parser: &Parser, mut other: impl Iterator<Item = char>) -> bool {
+    //     let mut self_iter = self.chars(parser).iter();
+    //     loop {
+    //         match (self_iter.next(), other.next()) {
+    //             (Some(a), Some(b)) if *a == b => continue,
+    //             (_, None) => return true,
+    //             _ => return false,
+    //         }
+    //     }
+    // }
 }
 
 #[derive(Debug)]

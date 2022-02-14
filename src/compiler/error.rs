@@ -1,5 +1,5 @@
-use super::{Parser, SourceLocation};
-use miette::{Diagnostic, NamedSource, Result, SourceSpan};
+use super::Parser;
+use miette::{Diagnostic, NamedSource, SourceSpan};
 use std::error;
 use std::fmt;
 
