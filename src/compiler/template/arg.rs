@@ -1,11 +1,13 @@
 use super::super::utils::is_space;
 use super::super::{js, Parser, ParserError, QuoteKind, SourceLocation};
-use super::VueTagArgs;
+use super::{add_or_set, VueTagArgs};
 
-fn new_try_parse(
+pub fn new_try_parse(
     p: &mut Parser,
     mut c: char,
     result: &mut VueTagArgs,
+    v_else_allowed: bool,
+    is_custom_component: bool,
 ) -> Result<Option<char>, ParserError> {
     if !is_start_of_arg(c) {
         return Ok(None);
@@ -26,7 +28,7 @@ fn new_try_parse(
         "v-model" => (ExpectValue::Yes, true, true, VueArgKind::Model),
         "v-cloak" => (ExpectValue::Yes, false, false, VueArgKind::Cloak),
         "v-else-if" => (ExpectValue::Yes, false, false, VueArgKind::ElseIf),
-        "v-for" => (ExpectValue::Yes, false, false, VueArgKind::ElseIf),
+        "v-for" => (ExpectValue::Yes, false, false, VueArgKind::For),
         "v-bind" => (ExpectValue::Yes, true, true, VueArgKind::Bind),
         "v-on" => (ExpectValue::Yes, true, true, VueArgKind::On),
         name if name.starts_with("v-") => (
@@ -85,35 +87,164 @@ fn new_try_parse(
             let (contents, next_c) = might_get_arg_value(p, &name_result, c)?;
             c = next_c;
             result.set_default_or_bind(
+                p,
                 name_result,
-                escape_string_to_js_string_or_undefined(contents),
-            );
+                escape_string_to_js_string_or(contents, String::from("true")),
+                false,
+            )?;
+            result.has_js_component_args = true;
         }
-        VueArgKind::Bind => {}
-        VueArgKind::On => {}
-        VueArgKind::Text => {}
-        VueArgKind::Html => {}
-        VueArgKind::If => {}
-        VueArgKind::Else => {}
-        VueArgKind::ElseIf => {}
-        VueArgKind::For => {}
-        VueArgKind::Model => {}
-        VueArgKind::Slot => {}
-        VueArgKind::Pre => {}
-        VueArgKind::Cloak => {}
-        VueArgKind::Once => {}
-        VueArgKind::CustomDirective(_) => {}
+        VueArgKind::Bind => {
+            let (content, next_c) = get_arg_js_value(p)?;
+            c = next_c;
+            result.set_default_or_bind(p, name_result, content, true)?;
+            result.has_js_component_args = true;
+        }
+        VueArgKind::On => {
+            let (content, next_c) = get_arg_js_value(p)?;
+            c = next_c;
+            let target = if let Some(target) = name_result.target {
+                target
+            } else {
+                return Err(ParserError::new(p, "expected a v-on target"));
+            };
+            add_or_set(&mut result.on, (target, content));
+            result.has_js_component_args = true;
+        }
+        VueArgKind::Text => {
+            let (content, next_c) = get_arg_js_value(p)?;
+            c = next_c;
+            add_or_set(
+                &mut result.dom_props,
+                (String::from("textContent"), content),
+            );
+            result.has_js_component_args = true;
+        }
+        VueArgKind::Html => {
+            let (content, next_c) = get_arg_js_value(p)?;
+            c = next_c;
+            add_or_set(&mut result.dom_props, (String::from("innerHTML"), content));
+            result.has_js_component_args = true;
+        }
+        VueArgKind::If => {
+            let (content, next_c) = get_arg_js_value(p)?;
+            c = next_c;
+            result.set_modifier(p, VueTagModifier::If(content))?;
+        }
+        VueArgKind::Else => {
+            if !v_else_allowed {
+                return Err(ParserError::new(
+                    p,
+                    "v-else can only be used after en v-if(-else) element",
+                ));
+            }
+            result.set_modifier(p, VueTagModifier::Else)?;
+        }
+        VueArgKind::ElseIf => {
+            if !v_else_allowed {
+                return Err(ParserError::new(
+                    p,
+                    "v-else-if can only be used after en v-if element",
+                ));
+            }
+            let (content, next_c) = get_arg_js_value(p)?;
+            c = next_c;
+            result.set_modifier(p, VueTagModifier::ElseIf(content))?;
+        }
+        VueArgKind::For => {
+            let content = parse_v_for_value(p)?;
+
+            // Remember the local variables set by the v-for
+            let mut local_variables_list: Vec<String> = vec![content.value.clone()];
+            if let Some(key) = result.key.as_ref() {
+                local_variables_list.push(key.clone());
+                if let Some(index) = content.index.as_ref() {
+                    local_variables_list.push(index.clone());
+                }
+            }
+            result.new_local_variables = Some(local_variables_list);
+
+            c = p.must_read_one()?;
+            result.set_modifier(p, VueTagModifier::For(content))?;
+        }
+        VueArgKind::Model => {
+            let (content, next_c) = get_arg_js_value(p)?;
+            c = next_c;
+
+            add_or_set(
+                &mut result.on,
+                (
+                    String::from("input"),
+                    format!(
+                        "$event.target.composing?undefined:{}=$event.target.value",
+                        &content
+                    ),
+                ),
+            );
+
+            let to_add_or_set = (name_result.name, content.clone());
+            if is_custom_component {
+                add_or_set(&mut result.attrs_or_props, to_add_or_set);
+            } else {
+                add_or_set(&mut result.dom_props, to_add_or_set);
+            }
+
+            add_or_set(&mut result.directives, (String::from("model"), content));
+            result.has_js_component_args = true;
+        }
+        VueArgKind::Slot => {
+            todo!("support slot");
+        }
+        VueArgKind::Pre => {
+            todo!("support pre");
+        }
+        VueArgKind::Cloak => {
+            todo!("support cloak");
+        }
+        VueArgKind::Once => {
+            todo!("support once");
+        }
+        VueArgKind::CustomDirective(_) => {
+            let (content, next_c) = get_arg_js_value(p)?;
+            c = next_c;
+
+            add_or_set(&mut result.directives, (name_result.name, content));
+            result.has_js_component_args = true;
+        }
     }
 
     Ok(Some(c))
 }
 
-fn escape_string_to_js_string_or_undefined(input: Option<String>) -> String {
+fn get_arg_js_value(p: &mut Parser) -> Result<(String, char), ParserError> {
+    let closure = p.must_read_one()?;
+    match closure {
+        '"' | '\'' => {} // Ok
+        c => {
+            return Err(ParserError::new(
+                p,
+                format!(
+                    "expected opening of argument value ('\"' or \"'\") but got '{}'",
+                    c.to_string()
+                ),
+            ))
+        }
+    }
+    let start = p.current_char;
+    let replacements = js::parse_template_arg(p, closure)?;
+    let sl = SourceLocation(start, p.current_char - 1);
+    let c = p.must_read_one()?;
+
+    let value = js::add_vm_references(p, &sl, &replacements);
+    Ok((value, c))
+}
+
+fn escape_string_to_js_string_or(input: Option<String>, or: String) -> String {
     if let Some(mut input) = input {
         escape_string_to_js_string(&mut input);
         input
     } else {
-        String::from("undefined")
+        or
     }
 }
 
@@ -236,6 +367,7 @@ fn parse_arg_name(p: &mut Parser, mut c: char) -> Result<(ParseArgNameResult, ch
                         parse_value_next = true;
                         break;
                     }
+                    '/' | '>' => break,
                     c => return invalid_character_err(p, c),
                 }
             }
@@ -257,6 +389,7 @@ fn parse_arg_name(p: &mut Parser, mut c: char) -> Result<(ParseArgNameResult, ch
                     parse_value_next = true;
                     break;
                 }
+                '/' | '>' => break,
                 c => return invalid_character_err(p, c),
             }
         }
@@ -280,6 +413,7 @@ fn parse_arg_name(p: &mut Parser, mut c: char) -> Result<(ParseArgNameResult, ch
                         parse_value_next = true;
                         break 'outer;
                     }
+                    '/' | '>' => break,
                     c => return invalid_character_err(p, c),
                 }
             }

@@ -309,8 +309,8 @@ pub fn vue_tag_args_to_js(args: &VueTagArgs, dest: &mut Vec<char>, is_custom_com
         for (name, value) in directives {
             directive_entries.add(dest);
             write_str("{name:\"", dest);
-            write_str(name, dest);
-            write_str("\",rawName:\"v-", dest);
+            write_str(name.split_at(2).1, dest);
+            write_str("\",rawName:\"", dest);
             write_str(name, dest);
             write_str("\",value:", dest);
             write_str(value, dest);

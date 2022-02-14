@@ -93,7 +93,8 @@ pub fn parse_tag(p: &mut Parser, v_else_allowed: bool) -> Result<Tag, ParserErro
     // Parse args
     loop {
         c = p.must_read_one_skip_spacing()?;
-        c = match arg::try_parse(p, c, &mut tag.args, v_else_allowed, tag.is_custom_component)? {
+        c = match arg::new_try_parse(p, c, &mut tag.args, v_else_allowed, tag.is_custom_component)?
+        {
             Some(next_char) => next_char,
             None => c,
         };
@@ -149,7 +150,7 @@ impl TagType {
     }
 }
 
-fn add_or_set<T>(list: &mut Option<Vec<T>>, add: T) {
+pub fn add_or_set<T>(list: &mut Option<Vec<T>>, add: T) {
     if let Some(list) = list.as_mut() {
         list.push(add);
     } else {
@@ -609,15 +610,37 @@ impl VueTagArgs {
         Some(resp)
     }
 
-    fn set_default_or_bind(&mut self, key: arg::ParseArgNameResult, value_as_js: String) {
-        match key.name.as_str() {
+    fn set_default_or_bind(
+        &mut self,
+        p: &Parser,
+        key: arg::ParseArgNameResult,
+        value_as_js: String,
+        is_bind: bool,
+    ) -> Result<(), ParserError> {
+        let value_to_match = if is_bind {
+            if let Some(target) = key.target.as_ref() {
+                println!("{}", target.as_str());
+                target.as_str()
+            } else {
+                return Err(ParserError::new(p, "expected a v-bind target"));
+            }
+        } else {
+            key.name.as_str()
+        };
+
+        match value_to_match {
             "class" => self.class = Some(value_as_js),
             "style" => self.style = Some(value_as_js),
             "slot" => self.slot = Some(value_as_js),
             "key" => self.key = Some(value_as_js),
             "ref" => self.ref_ = Some(value_as_js),
-            _ => add_or_set(&mut self.attrs_or_props, (key.name.clone(), value_as_js)),
+            _ => add_or_set(
+                &mut self.attrs_or_props,
+                (value_to_match.to_string(), value_as_js),
+            ),
         };
+
+        Ok(())
     }
 
     fn add(
