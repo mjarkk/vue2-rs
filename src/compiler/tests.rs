@@ -53,9 +53,15 @@ mod tests {
         let result = Parser::new_and_parse("<script>export default {}</script>").unwrap();
 
         assert!(result.template.is_none());
+        let script = result.script.as_ref().unwrap();
+        assert_eq!(script.content.string(&result), "export default {}");
         assert_eq!(
-            result.script.as_ref().unwrap().content.string(&result),
-            "export default {}"
+            script
+                .default_export_location
+                .as_ref()
+                .unwrap()
+                .string(&result),
+            "export default",
         );
         assert_eq!(result.styles.len(), 0);
     }
@@ -91,6 +97,14 @@ mod tests {
 
         let script = result.script.as_ref().unwrap();
         assert_eq!(script.content.string(&result), "export default {}");
+        assert_eq!(
+            script
+                .default_export_location
+                .as_ref()
+                .unwrap()
+                .string(&result),
+            "export default",
+        );
         assert_eq!(script.lang.as_ref().unwrap(), "ts");
         assert_eq!(
             script

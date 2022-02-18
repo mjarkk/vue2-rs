@@ -281,6 +281,11 @@ impl SourceLocation {
             Vec::new()
         }
     }
+    pub fn write_to_vec(&self, parser: &Parser, dest: &mut Vec<char>) {
+        for c in self.chars(parser) {
+            dest.push(*c);
+        }
+    }
     pub fn write_to_vec_escape(
         &self,
         parser: &Parser,

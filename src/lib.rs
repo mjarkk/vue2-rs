@@ -54,18 +54,17 @@ fn transform_main(code: &str, _id: &str) -> Result<String, ParserError> {
     }
 
     let mut resp: Vec<char> = if let Some(script) = script {
-        if let Some(default_export_location) = &script.default_export_location {
-            let mut resp =
-                SourceLocation(script.content.0, default_export_location.0).chars_vec(&parsed_code);
-            resp.append(
-                &mut "\nconst __vue_2_file_default_export__ ="
-                    .chars()
-                    .collect::<Vec<char>>(),
-            );
-            resp.append(
-                &mut SourceLocation(default_export_location.1, script.content.1)
-                    .chars_vec(&parsed_code),
-            );
+        if let Some(default_export_location) = script.default_export_location.as_ref() {
+            let mut resp: Vec<char> = Vec::new();
+
+            SourceLocation(script.content.0, default_export_location.0)
+                .write_to_vec(&parsed_code, &mut resp);
+
+            compiler::utils::write_str("\nconst __vue_2_file_default_export__ =", &mut resp);
+
+            SourceLocation(default_export_location.1, script.content.1)
+                .write_to_vec(&parsed_code, &mut resp);
+
             resp
         } else {
             let mut resp = script.content.chars_vec(&parsed_code);
