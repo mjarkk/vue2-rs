@@ -32,7 +32,7 @@ This is a project that is in progress
         - [x] `v-text`
         - [x] `v-html`
         - [ ] `v-once`
-        - [ ] `v-model`
+        - [x] `v-model`
         - [ ] `v-cloak`
         - [x] Custom (`v-custom-directive`)
     - [ ] Support for `<template>` element
@@ -62,4 +62,4 @@ wasm-pack build --target nodejs --dev && npm run dev
 ```
 
 You can inspect what the vite is doing on:
-[localhost:3000/__inspect](http://localhost:3000/__inspect)
+[localhost:3000/\_\_inspect](http://localhost:3000/__inspect)
