@@ -494,7 +494,7 @@ mod tests {
                 template_to_js_eq(
                     "<div v-text=\"'<div></div>'\" />",
                     "_c('div',{domProps:{\"textContent\":'<div></div>'},[])",
-                )
+                );
             }
 
             #[test]
@@ -502,15 +502,20 @@ mod tests {
                 template_to_js_eq(
                     "<div v-html=\"'<div></div>'\" />",
                     "_c('div',{domProps:{\"innerHTML\":'<div></div>'},[])",
-                )
+                );
             }
 
             #[test]
             fn v_custom_directive() {
                 template_to_js_eq(
                     "<div v-show=\"true\" />",
-                    "_c('div',{directives:[{name:\"show\",rawName:\"v-show\",value:true,expression:\"true\"}[},[])",
-                )
+                    "_c('div',{directives:[{name:\"show\",rawName:\"v-show\",value:true,expression:\"true\"}]},[])",
+                );
+
+                template_to_js_eq(
+                    "<div v-custom:arg.foo.bar=\"true\" />",
+                    "_c('div',{directives:[{name:\"custom\",rawName:\"v-custom\",value:true,expression:\"true\",arg:\"arg\",modifiers:{\"foo\":true,\"bar\":true,}}]},[])",
+                );
             }
         }
     }

@@ -182,14 +182,14 @@ pub fn new_try_parse(
                 ),
             );
 
-            let to_add_or_set = (name_result.name, content.clone());
+            let to_add_or_set = (name_result.name.clone(), content.clone());
             if is_custom_component {
                 add_or_set(&mut result.attrs_or_props, to_add_or_set);
             } else {
                 add_or_set(&mut result.dom_props, to_add_or_set);
             }
 
-            add_or_set(&mut result.directives, (String::from("model"), content));
+            add_or_set(&mut result.directives, (name_result, content));
             result.has_js_component_args = true;
         }
         VueArgKind::Slot => {
@@ -208,7 +208,7 @@ pub fn new_try_parse(
             let (content, next_c) = get_arg_js_value(p)?;
             c = next_c;
 
-            add_or_set(&mut result.directives, (name_result.name, content));
+            add_or_set(&mut result.directives, (name_result, content));
             result.has_js_component_args = true;
         }
     }
@@ -318,6 +318,7 @@ enum ExpectValue {
     Both,
 }
 
+#[derive(Debug, Clone)]
 pub struct ParseArgNameResult {
     parse_value_next: bool,
     // name details
@@ -411,6 +412,7 @@ fn parse_arg_name(p: &mut Parser, mut c: char) -> Result<(ParseArgNameResult, ch
                     }
                     '=' => {
                         parse_value_next = true;
+                        modifiers.push(modifier);
                         break 'outer;
                     }
                     '/' | '>' => break,

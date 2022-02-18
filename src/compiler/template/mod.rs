@@ -532,7 +532,7 @@ pub struct VueTagArgs {
     // Custom directives. Note that the `binding`'s
     // `oldValue` cannot be set, as Vue keeps track
     // of it for you.
-    pub directives: Option<Vec<(String, String)>>,
+    pub directives: Option<Vec<(arg::ParseArgNameResult, String)>>,
 
     // TODO
     // Scoped slots in the form of

@@ -309,17 +309,40 @@ pub fn vue_tag_args_to_js(args: &VueTagArgs, dest: &mut Vec<char>, is_custom_com
         for (name, value) in directives {
             directive_entries.add(dest);
             write_str("{name:\"", dest);
-            write_str(name.split_at(2).1, dest);
-            write_str("\",rawName:\"", dest);
-            write_str(name, dest);
-            write_str("\",value:", dest);
+            write_str(name.name.split_at(2).1, dest);
+            dest.push('"');
+
+            write_str(",rawName:\"", dest);
+            write_str(&name.name, dest);
+            dest.push('"');
+
+            write_str(",value:", dest);
             write_str(value, dest);
+
             write_str(",expression:\"", dest);
             write_str(&js::escape_quotes(&value, '"'), dest);
-            write_str("\"}", dest);
+            dest.push('"');
+
+            if let Some(target) = name.target.as_ref() {
+                write_str(",arg:\"", dest);
+                write_str(&js::escape_quotes(target, '"'), dest);
+                dest.push('"');
+            }
+
+            if let Some(modifiers) = name.modifiers.as_ref() {
+                write_str(",modifiers:{", dest);
+                for modifier in modifiers {
+                    dest.push('"');
+                    write_str(&js::escape_quotes(modifier, '"'), dest);
+                    write_str("\":true,", dest);
+                }
+                dest.push('}');
+            }
+
+            write_str("}", dest);
         }
 
-        dest.push('[');
+        dest.push(']');
     }
 
     if let Some(slot) = args.slot.as_ref() {
