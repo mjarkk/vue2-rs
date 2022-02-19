@@ -13,7 +13,7 @@ _c('div', [
 */
 
 const DEFAULT_CONF: &'static str = "
-__vue_2_file_default_export__.render = c => {
+__vue_2_file_default_export__.render = function(c) {
     const _vm = this;
     const _h = _vm.$createElement;
     const _c = _vm._self._c || _h;
@@ -255,6 +255,8 @@ pub fn vue_tag_args_to_js(args: &VueTagArgs, dest: &mut Vec<char>, is_custom_com
                 dest.push(c);
             }
         }
+
+        dest.push('}');
     }
 
     if let Some(on) = args.on.as_ref() {
