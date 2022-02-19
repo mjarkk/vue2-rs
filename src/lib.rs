@@ -37,11 +37,11 @@ pub fn transform(code: &str, id: &str) -> Option<String> {
         let result = transform_main(code, id).unwrap();
 
         log!("result: {}", result);
+        Some(result)
     } else {
         log!("TODO transform {}", id);
+        None
     }
-
-    None
 }
 
 fn transform_main(code: &str, _id: &str) -> Result<String, ParserError> {
