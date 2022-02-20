@@ -43,40 +43,6 @@ const vuePluginProxy = {
 
     // transforms the code into the module
     async transform(code, id) {
-        if (/\.vue$/.test(id)) {
-            const code = `
-            import {defineComponent} from "@vue/composition-api";
-
-            const __vue_2_file_default_export__ = defineComponent({
-                data: ()=>({
-                    list: ["a", "b"],
-                    count: 1,
-                    inputValue: "",
-                }),
-            });
-
-            __vue_2_file_default_export__.render = function(c) {
-                const _vm = this;
-                const _h = _vm.$createElement;
-                const _c = _vm._self._c || _h;
-                return _c('div', [
-                    _c('h1', [
-                        _vm._v("It wurks " + _vm._s(_vm.count) + "!")
-                    ]),
-                    _c('button', {on: {"click": $event=>{_vm.count++}}}, [
-                        _vm._v("+")
-                    ]),
-                    _c('button', {on: {"click": $event=>{_vm.count--}}}, [
-                        _vm._v("-")
-                    ])
-                ])
-            }
-            ;
-            export default __vue_2_file_default_export__;
-            `
-            return { code, map: null }
-        }
-
         // const t1 = performance.now()
         const transformedCode = transform(code, id)
         if (transformedCode) {
