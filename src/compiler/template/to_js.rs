@@ -59,12 +59,50 @@ pub fn children_to_js(
 
     let mut add_magic_number: Option<u8> = None;
 
-    while let Some(child) = children_iter.next() {
+    'outerloop: while let Some(mut child) = children_iter.next() {
         if !inside_of_if {
             list_builder.add(resp);
         } else if !child.is_v_else_or_else_if() {
+            // We are at the end of a v-if > v-else-if
+            // There is no else case written yet, lets write that here
             write_str("_vm._e()", resp);
             list_builder.add(resp);
+        }
+
+        match child {
+            Child::Text(location) => {
+                // Writes:
+                // _vm._v("foo bar")
+                // Or in case of text mixed with vars:
+                // _vm._v("foo bar " + _vm._s(_vm.some_var) + "!")
+                write_str("_vm._v(\"", resp);
+                location.write_to_vec_escape(p, resp, '"', '\\');
+                resp.push('"');
+                loop {
+                    if let Some(next_child) = children_iter.next() {
+                        match next_child {
+                            Child::Text(location) => {
+                                write_str("+\"", resp);
+                                location.write_to_vec_escape(p, resp, '"', '\\');
+                                resp.push('"');
+                            }
+                            Child::Var(var) => {
+                                resp.push('+');
+                                write_vue_js_var(var, resp);
+                            }
+                            Child::Tag(_, _) => {
+                                child = next_child;
+                                break;
+                            }
+                        }
+                    } else {
+                        resp.push(')');
+                        break 'outerloop;
+                    }
+                }
+                resp.push(')');
+            }
+            _ => {}
         }
 
         let artifacts = child_to_js(child, p, resp);
@@ -190,13 +228,18 @@ pub fn child_to_js(child: &Child, p: &Parser, resp: &mut Vec<char>) -> ChildToJs
             write_str("\")", resp);
         }
         Child::Var(var) => {
-            write_str("_vm._s(", resp);
-            write_str(&var, resp);
-            resp.push(')');
+            write_vue_js_var(var, resp);
         }
     };
 
     artifacts
+}
+
+fn write_vue_js_var(var: &str, resp: &mut Vec<char>) {
+    // Writes _vm._s(_vm.some_var)
+    write_str("_vm._s(", resp);
+    write_str(&var, resp);
+    resp.push(')');
 }
 
 pub fn vue_tag_args_to_js(args: &VueTagArgs, dest: &mut Vec<char>, is_custom_component: bool) {

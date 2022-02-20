@@ -338,6 +338,11 @@ mod tests {
                 "<h1>{{ this.hello_world }}</h1>",
                 "_c('h1',[_vm._s( _vm.hello_world )])",
             );
+
+            template_to_js_eq(
+                "<h1>foo {{ hello_world }} bar</h1>",
+                "_c('h1',[_vm._v(\"foo \"+_vm._s( _vm.hello_world )+\" bar\")])",
+            );
         }
 
         mod args {
@@ -507,7 +512,7 @@ mod tests {
             fn v_text() {
                 template_to_js_eq(
                     "<div v-text=\"'<div></div>'\" />",
-                    "_c('div',{domProps:{\"textContent\":'<div></div>'},[])",
+                    "_c('div',{domProps:{\"textContent\":'<div></div>'}},[])",
                 );
             }
 
@@ -515,7 +520,7 @@ mod tests {
             fn v_html() {
                 template_to_js_eq(
                     "<div v-html=\"'<div></div>'\" />",
-                    "_c('div',{domProps:{\"innerHTML\":'<div></div>'},[])",
+                    "_c('div',{domProps:{\"innerHTML\":'<div></div>'}},[])",
                 );
             }
 

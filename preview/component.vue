@@ -1,7 +1,7 @@
 <template>
   <div>
     <h1>It wurks {{ count }}!</h1>
-    <div v-if="count">If {{ count }}!</div>
+    <!-- <div v-if="count">If {{ count }}!</div>
     <div v-else>Else {{ count }}</div>
     <div v-if="!count">Another else</div>
     <div v-text="'abc'" />
@@ -12,7 +12,7 @@
         {{ key }} #{{ index }}</span
       >
     </div>
-    <input v-model="inputValue" />
+    <input v-model="inputValue" /> -->
     <button v-on:click="count++">+</button>
     <button @click="count--">-</button>
   </div>
