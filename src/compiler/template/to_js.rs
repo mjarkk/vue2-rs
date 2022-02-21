@@ -1,6 +1,7 @@
 use super::super::utils::write_str;
-use super::super::{js, Parser};
+use super::super::{js, utils, Parser, SourceLocation};
 use super::{arg::VueTagModifier, Child, VueTagArgs};
+use std::slice::Iter;
 
 /*
 _c('div', [
@@ -59,7 +60,7 @@ pub fn children_to_js(
 
     let mut add_magic_number: Option<u8> = None;
 
-    'outerloop: while let Some(mut child) = children_iter.next() {
+    while let Some(mut child) = children_iter.next() {
         if !inside_of_if {
             list_builder.add(resp);
         } else if !child.is_v_else_or_else_if() {
@@ -70,37 +71,35 @@ pub fn children_to_js(
         }
 
         match child {
-            Child::Text(location) => {
-                // Writes:
-                // _vm._v("foo bar")
-                // Or in case of text mixed with vars:
-                // _vm._v("foo bar " + _vm._s(_vm.some_var) + "!")
-                write_str("_vm._v(\"", resp);
-                location.write_to_vec_escape(p, resp, '"', '\\');
-                resp.push('"');
-                loop {
-                    if let Some(next_child) = children_iter.next() {
-                        match next_child {
-                            Child::Text(location) => {
-                                write_str("+\"", resp);
-                                location.write_to_vec_escape(p, resp, '"', '\\');
-                                resp.push('"');
-                            }
-                            Child::Var(var) => {
-                                resp.push('+');
-                                write_vue_js_var(var, resp);
-                            }
-                            Child::Tag(_, _) => {
-                                child = next_child;
-                                break;
-                            }
-                        }
-                    } else {
-                        resp.push(')');
-                        break 'outerloop;
-                    }
-                }
+            // Writes:
+            // _vm._v("foo bar")
+            // Or in case of text mixed with vars:
+            // _vm._v("foo bar " + _vm._s(_vm.some_var) + "!")
+            Child::Var(var) => {
+                write_str("_vm._v(", resp);
+                write_vue_js_var(var, resp);
+                let might_next_child = concat_next_text_and_vars(p, &mut children_iter, resp);
                 resp.push(')');
+
+                if let Some(next_child) = might_next_child {
+                    child = next_child;
+                    list_builder.add(resp);
+                } else {
+                    break;
+                }
+            }
+            Child::Text(location) => {
+                write_str("_vm._v(", resp);
+                write_text_quote(p, location, resp);
+                let might_next_child = concat_next_text_and_vars(p, &mut children_iter, resp);
+                resp.push(')');
+
+                if let Some(next_child) = might_next_child {
+                    child = next_child;
+                    list_builder.add(resp);
+                } else {
+                    break;
+                }
             }
             _ => {}
         }
@@ -125,6 +124,32 @@ pub fn children_to_js(
     }
 
     AddChildrenResult { add_magic_number }
+}
+
+fn concat_next_text_and_vars<'a>(
+    p: &Parser,
+    children_iter: &mut Iter<'a, Child>,
+    resp: &mut Vec<char>,
+) -> Option<&'a Child> {
+    loop {
+        if let Some(child) = children_iter.next() {
+            match child {
+                Child::Text(location) => {
+                    resp.push('+');
+                    write_text_quote(p, location, resp);
+                }
+                Child::Var(var) => {
+                    resp.push('+');
+                    write_vue_js_var(var, resp);
+                }
+                Child::Tag(_, _) => {
+                    return Some(child);
+                }
+            }
+        } else {
+            return None;
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -214,18 +239,9 @@ pub fn child_to_js(child: &Child, p: &Parser, resp: &mut Vec<char>) -> ChildToJs
         Child::Text(location) => {
             // Writes:
             // _vm._v("foo bar")
-            write_str("_vm._v(\"", resp);
-            for c in location.chars(p).iter() {
-                match *c {
-                    '\\' | '"' => {
-                        // Add escape characters
-                        resp.push('\\');
-                        resp.push(*c);
-                    }
-                    c => resp.push(c),
-                }
-            }
-            write_str("\")", resp);
+            write_str("_vm._v(", resp);
+            write_text_quote(p, location, resp);
+            resp.push(')');
         }
         Child::Var(var) => {
             write_vue_js_var(var, resp);
@@ -240,6 +256,35 @@ fn write_vue_js_var(var: &str, resp: &mut Vec<char>) {
     write_str("_vm._s(", resp);
     write_str(&var, resp);
     resp.push(')');
+}
+
+fn write_text_quote(p: &Parser, location: &SourceLocation, resp: &mut Vec<char>) {
+    resp.push('"');
+
+    let mut chars_iter = location.chars(p).iter();
+    'outer_loop: while let Some(c_ref) = chars_iter.next() {
+        let mut c = *c_ref;
+        if utils::is_space(c) {
+            resp.push(' ');
+            loop {
+                if let Some(next_c_ref) = chars_iter.next() {
+                    if !utils::is_space(*next_c_ref) {
+                        c = *next_c_ref;
+                        break;
+                    }
+                } else {
+                    break 'outer_loop;
+                }
+            }
+        }
+
+        if c == '"' || c == '\\' {
+            resp.push('\\');
+        }
+        resp.push(c);
+    }
+
+    resp.push('"');
 }
 
 pub fn vue_tag_args_to_js(args: &VueTagArgs, dest: &mut Vec<char>, is_custom_component: bool) {

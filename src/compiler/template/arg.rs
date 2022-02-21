@@ -156,7 +156,7 @@ pub fn new_try_parse(
 
             // Remember the local variables set by the v-for
             let mut local_variables_list: Vec<String> = vec![content.value.clone()];
-            if let Some(key) = result.key.as_ref() {
+            if let Some(key) = content.key.as_ref() {
                 local_variables_list.push(key.clone());
                 if let Some(index) = content.index.as_ref() {
                     local_variables_list.push(index.clone());

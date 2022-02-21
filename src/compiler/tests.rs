@@ -326,17 +326,17 @@ mod tests {
         fn vars() {
             template_to_js_eq(
                 "<h1>{{ 'hello world' }}</h1>",
-                "_c('h1',[_vm._s( 'hello world' )])",
+                "_c('h1',[_vm._v(_vm._s( 'hello world' ))])",
             );
 
             template_to_js_eq(
                 "<h1>{{ hello_world }}</h1>",
-                "_c('h1',[_vm._s( _vm.hello_world )])",
+                "_c('h1',[_vm._v(_vm._s( _vm.hello_world ))])",
             );
 
             template_to_js_eq(
                 "<h1>{{ this.hello_world }}</h1>",
-                "_c('h1',[_vm._s( _vm.hello_world )])",
+                "_c('h1',[_vm._v(_vm._s( _vm.hello_world ))])",
             );
 
             template_to_js_eq(
@@ -475,13 +475,13 @@ mod tests {
 
                 template_to_js_eq(
                     "<div><div v-for='entry in list'>{{ entry }} {{ other_var }}</div></div>",
-                    "_c('div',_vm._l((_vm.list),(entry)=>_c('div',[_vm._s( entry ),_vm._s( _vm.other_var )])),0)",
+                    "_c('div',_vm._l((_vm.list),(entry)=>_c('div',[_vm._v(_vm._s( entry )+_vm._s( _vm.other_var ))])),0)",
                 );
 
                 // With entry and key
                 template_to_js_eq(
-                    "<div><div v-for='(entry, key) in list'/></div>",
-                    "_c('div',_vm._l((_vm.list),(entry,key)=>_c('div',[])),0)",
+                    "<div><div v-for='(entry, key) in list'>{{ entry }} {{ key }}</div></div>",
+                    "_c('div',_vm._l((_vm.list),(entry,key)=>_c('div',[_vm._v(_vm._s( entry )+_vm._s( key ))])),0)",
                 );
 
                 // With entry, key and index

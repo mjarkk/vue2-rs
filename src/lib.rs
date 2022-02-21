@@ -34,10 +34,8 @@ pub fn transform(code: &str, id: &str) -> Option<String> {
     }
 
     if parsed_id.is_main {
-        let result = transform_main(code, id).unwrap();
-
-        log!("result: {}", result);
-        Some(result)
+        // TODO remove unwrap
+        Some(transform_main(code, id).unwrap())
     } else {
         log!("TODO transform {}", id);
         None
