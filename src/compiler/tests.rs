@@ -309,8 +309,8 @@ mod tests {
 
         #[test]
         fn static_elements_with_content() {
-            template_to_js_eq("<div></div>", "_c('div',[])");
-            template_to_js_eq("<div/>", "_c('div',[])");
+            template_to_js_eq("<div></div>", "_c('div')");
+            template_to_js_eq("<div/>", "_c('div')");
             template_to_js_eq("<h1>BOOOO</h1>", "_c('h1',[_vm._v(\"BOOOO\")])");
             template_to_js_eq(
                 "<div><h1>BOOOO</h1></div>",
@@ -470,7 +470,7 @@ mod tests {
             fn v_for() {
                 template_to_js_eq(
                     "<div><div v-for='entry in list'/></div>",
-                    "_c('div',_vm._l((_vm.list),(entry)=>_c('div',[])),0)",
+                    "_c('div',_vm._l((_vm.list),(entry)=>_c('div')),0)",
                 );
 
                 template_to_js_eq(
@@ -487,13 +487,13 @@ mod tests {
                 // With entry, key and index
                 template_to_js_eq(
                     "<div><div v-for='(entry, key, index) in list'/></div>",
-                    "_c('div',_vm._l((_vm.list),(entry,key,index)=>_c('div',[])),0)",
+                    "_c('div',_vm._l((_vm.list),(entry,key,index)=>_c('div')),0)",
                 );
 
                 // With custom component
                 template_to_js_eq(
                     "<div><custom-component v-for='entry in list'/></div>",
-                    "_c('div',_vm._l((_vm.list),(entry)=>_c('custom-component',[])),1)",
+                    "_c('div',_vm._l((_vm.list),(entry)=>_c('custom-component')),1)",
                 );
 
                 // With other elements within the same element
@@ -502,7 +502,7 @@ mod tests {
                     concat!(
                         "_c('div',[",
                         "_c('h1',[_vm._v(\"HELLO\")]),",
-                        "_vm._l((_vm.list),(entry)=>_c('div',[]))",
+                        "_vm._l((_vm.list),(entry)=>_c('div'))",
                         "],2)",
                     ),
                 );
@@ -512,7 +512,7 @@ mod tests {
             fn v_text() {
                 template_to_js_eq(
                     "<div v-text=\"'<div></div>'\" />",
-                    "_c('div',{domProps:{\"textContent\":'<div></div>'}},[])",
+                    "_c('div',{domProps:{\"textContent\":'<div></div>'}})",
                 );
             }
 
@@ -520,7 +520,7 @@ mod tests {
             fn v_html() {
                 template_to_js_eq(
                     "<div v-html=\"'<div></div>'\" />",
-                    "_c('div',{domProps:{\"innerHTML\":'<div></div>'}},[])",
+                    "_c('div',{domProps:{\"innerHTML\":'<div></div>'}})",
                 );
             }
 
@@ -528,12 +528,12 @@ mod tests {
             fn v_custom_directive() {
                 template_to_js_eq(
                     "<div v-show=\"true\" />",
-                    "_c('div',{directives:[{name:\"show\",rawName:\"v-show\",value:true,expression:\"true\"}]},[])",
+                    "_c('div',{directives:[{name:\"show\",rawName:\"v-show\",value:true,expression:\"true\"}]})",
                 );
 
                 template_to_js_eq(
                     "<div v-custom:arg.foo.bar=\"true\" />",
-                    "_c('div',{directives:[{name:\"custom\",rawName:\"v-custom\",value:true,expression:\"true\",arg:\"arg\",modifiers:{\"foo\":true,\"bar\":true,}}]},[])",
+                    "_c('div',{directives:[{name:\"custom\",rawName:\"v-custom:arg.foo.bar\",value:true,expression:\"true\",arg:\"arg\",modifiers:{\"foo\":true,\"bar\":true,}}]})",
                 );
             }
         }

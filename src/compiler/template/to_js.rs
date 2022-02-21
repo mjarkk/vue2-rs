@@ -212,21 +212,24 @@ pub fn child_to_js(child: &Child, p: &Parser, resp: &mut Vec<char>) -> ChildToJs
                 vue_tag_args_to_js(&tag.args, resp, artifacts.is_custom_component);
             }
 
-            resp.push(',');
-            let result = if children.len() == 1 && children.get(0).unwrap().is_v_for() {
-                children_to_js(children, p, resp)
-            } else {
-                resp.push('[');
-                let result = children_to_js(children, p, resp);
-                resp.push(']');
-                result
-            };
-
-            if let Some(magic_number) = result.add_magic_number {
-                // When using v-for a magic number is added
-                // TODO: find out what this magic number exacly is
+            let children_len = children.len();
+            if children_len != 0 {
                 resp.push(',');
-                write_str(&magic_number.to_string(), resp);
+                let result = if children.len() == 1 && children.get(0).unwrap().is_v_for() {
+                    children_to_js(children, p, resp)
+                } else {
+                    resp.push('[');
+                    let result = children_to_js(children, p, resp);
+                    resp.push(']');
+                    result
+                };
+
+                if let Some(magic_number) = result.add_magic_number {
+                    // When using v-for a magic number is added
+                    // TODO: find out what this magic number exacly is
+                    resp.push(',');
+                    write_str(&magic_number.to_string(), resp);
+                }
             }
             write_str(")", resp);
 
@@ -237,8 +240,6 @@ pub fn child_to_js(child: &Child, p: &Parser, resp: &mut Vec<char>) -> ChildToJs
             }
         }
         Child::Text(location) => {
-            // Writes:
-            // _vm._v("foo bar")
             write_str("_vm._v(", resp);
             write_text_quote(p, location, resp);
             resp.push(')');
