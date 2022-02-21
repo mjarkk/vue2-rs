@@ -4,13 +4,7 @@ use super::{arg::VueTagModifier, Child, VueTagArgs};
 use std::slice::Iter;
 
 /*
-_c('div', [
-    _c('h1', [
-        _vm._v(\"It wurks \" + _vm._s(_vm.count) + \" !\")
-    ]),
-    _c('button', { on: { \"click\": $event => { _vm.count++ } } }, [_vm._v(\"+\")]),
-    _c('button', { on: { \"click\": $event => { _vm.count-- } } }, [_vm._v(\"-\")]),
-])
+    TODO support html escape
 */
 
 const DEFAULT_CONF: &'static str = "
@@ -106,7 +100,13 @@ pub fn children_to_js(
 
         let artifacts = child_to_js(child, p, resp);
         inside_of_if = artifacts.opened_inline_if_else;
-        if artifacts.is_v_for {
+        if let Some(remaining_v_for_magic_number) = artifacts.move_v_for_magic_number_up {
+            add_magic_number = Some(if children.len() > 1 {
+                2
+            } else {
+                remaining_v_for_magic_number
+            })
+        } else if artifacts.is_v_for {
             add_magic_number = Some(if children.len() > 1 {
                 2
             } else {
@@ -156,6 +156,7 @@ fn concat_next_text_and_vars<'a>(
 pub struct ChildToJsArtifacts {
     pub opened_inline_if_else: bool,
     pub is_v_for: bool,
+    pub move_v_for_magic_number_up: Option<u8>,
     pub is_custom_component: bool,
 }
 
@@ -163,10 +164,10 @@ pub fn child_to_js(child: &Child, p: &Parser, resp: &mut Vec<char>) -> ChildToJs
     let mut artifacts = ChildToJsArtifacts {
         opened_inline_if_else: false,
         is_v_for: false,
+        move_v_for_magic_number_up: None,
         is_custom_component: false,
     };
 
-    // TODO support html escape
     match child {
         Child::Tag(tag, children) => {
             if let Some(modifier) = tag.args.modifier.as_ref() {
@@ -201,21 +202,11 @@ pub fn child_to_js(child: &Child, p: &Parser, resp: &mut Vec<char>) -> ChildToJs
                 }
             }
 
-            // Writes:
-            // _c('div', [_c(..), _c(..)])
-            write_str("_c('", resp);
-            tag.name.write_to_vec_escape(p, resp, '\'', '\\');
-            resp.push('\'');
-            artifacts.is_custom_component = tag.is_custom_component;
-            if tag.args.has_js_component_args {
-                resp.push(',');
-                vue_tag_args_to_js(&tag.args, resp, artifacts.is_custom_component);
-            }
-
             let children_len = children.len();
-            if children_len != 0 {
-                resp.push(',');
-                let result = if children.len() == 1 && children.get(0).unwrap().is_v_for() {
+
+            let is_template = tag.name.eq(p, "template".chars());
+            if is_template {
+                let result = if children_len == 1 && children.get(0).unwrap().is_v_for() {
                     children_to_js(children, p, resp)
                 } else {
                     resp.push('[');
@@ -225,13 +216,42 @@ pub fn child_to_js(child: &Child, p: &Parser, resp: &mut Vec<char>) -> ChildToJs
                 };
 
                 if let Some(magic_number) = result.add_magic_number {
-                    // When using v-for a magic number is added
-                    // TODO: find out what this magic number exacly is
-                    resp.push(',');
-                    write_str(&magic_number.to_string(), resp);
+                    artifacts.move_v_for_magic_number_up = Some(magic_number);
+                    artifacts.is_v_for = true;
                 }
+            } else {
+                // Writes:
+                // _c('div', [_c(..), _c(..)])
+
+                write_str("_c('", resp);
+                tag.name.write_to_vec_escape(p, resp, '\'', '\\');
+                resp.push('\'');
+                artifacts.is_custom_component = tag.is_custom_component;
+                if tag.args.has_js_component_args {
+                    resp.push(',');
+                    vue_tag_args_to_js(&tag.args, resp, artifacts.is_custom_component);
+                }
+
+                if children_len != 0 {
+                    resp.push(',');
+                    let result = if children_len == 1 && children.get(0).unwrap().is_v_for() {
+                        children_to_js(children, p, resp)
+                    } else {
+                        resp.push('[');
+                        let result = children_to_js(children, p, resp);
+                        resp.push(']');
+                        result
+                    };
+
+                    if let Some(magic_number) = result.add_magic_number {
+                        // When using v-for a magic number is added
+                        // TODO: find out what this magic number exacly is
+                        resp.push(',');
+                        write_str(&magic_number.to_string(), resp);
+                    }
+                }
+                resp.push(')');
             }
-            write_str(")", resp);
 
             if artifacts.opened_inline_if_else {
                 resp.push(':');

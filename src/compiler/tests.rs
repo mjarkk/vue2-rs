@@ -537,6 +537,37 @@ mod tests {
                 );
             }
         }
+
+        #[test]
+        fn template_tag() {
+            // empty template tag
+            template_to_js_eq("<div><template /></div>", "_c('div',[[]])");
+            template_to_js_eq("<div><template></template></div>", "_c('div',[[]])");
+
+            // template with tag inside
+            template_to_js_eq(
+                "<div> <template> <div /> </template> </div>",
+                "_c('div',[[_c('div')]])",
+            );
+
+            // test template inside of template
+            template_to_js_eq(
+                "<div><template><template /></template></div>",
+                "_c('div',[[[]]])",
+            );
+
+            // test template using v-if
+            template_to_js_eq(
+                "<div><template v-if='some_var'/></div>",
+                "_c('div',[_vm.some_var?[]:_vm._e()])",
+            );
+
+            // test template using v-for
+            template_to_js_eq(
+                "<div><template v-for='(value,key) in list'>{{value + key}}</template></div>",
+                "_c('div',_vm._l((_vm.list),(value,key)=>[_vm._v(_vm._s(value + key))]),0)",
+            );
+        }
     }
 
     mod js_tests {

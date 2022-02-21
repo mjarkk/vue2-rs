@@ -18,6 +18,7 @@ This is a project that is in progress
   - [ ] Convert to JS render method
     - [x] Static text
     - [x] Var (`{{ foo+bar }}`)
+    - [ ] Support HTML escape characters
     - [ ] Tag
       - [x] Name
       - [x] Children
@@ -36,6 +37,13 @@ This is a project that is in progress
         - [ ] `v-cloak`
         - [x] Custom (`v-custom-directive`)
     - [ ] Support for `<template>` element
+      - [ ] Args
+        - [ ] `v-if`
+        - [ ] `v-for`
+        - [ ] `v-pre`
+        - [ ] `v-slot`
+        - [ ] `v-text`
+        - [ ] `v-html`
     - [ ] Pug support?
 - Script
   - [x] Basic start and end detection (`<script>..</script>`)
