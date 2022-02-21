@@ -404,6 +404,16 @@ pub fn vue_tag_args_to_js(args: &VueTagArgs, dest: &mut Vec<char>, is_custom_com
 
             write_str(",rawName:\"", dest);
             write_str(&name.name, dest);
+            if let Some(target) = name.target.as_ref() {
+                dest.push(':');
+                write_str(target, dest);
+            }
+            if let Some(modifiers) = name.modifiers.as_ref() {
+                for modifier in modifiers {
+                    dest.push('.');
+                    write_str(modifier, dest);
+                }
+            }
             dest.push('"');
 
             write_str(",value:", dest);
