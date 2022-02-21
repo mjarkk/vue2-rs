@@ -182,11 +182,23 @@ pub fn new_try_parse(
                 ),
             );
 
-            let to_add_or_set = (name_result.name.clone(), content.clone());
             if is_custom_component {
-                add_or_set(&mut result.attrs_or_props, to_add_or_set);
+                if let Some(target) = name_result.target.as_ref() {
+                    add_or_set(
+                        &mut result.attrs_or_props,
+                        (target.clone(), content.clone()),
+                    );
+                } else {
+                    add_or_set(
+                        &mut result.attrs_or_props,
+                        (String::from("value"), content.clone()),
+                    );
+                }
             } else {
-                add_or_set(&mut result.dom_props, to_add_or_set);
+                add_or_set(
+                    &mut result.dom_props,
+                    (String::from("value"), content.clone()),
+                );
             }
 
             add_or_set(&mut result.directives, (name_result, content));
