@@ -206,18 +206,22 @@ pub fn child_to_js(child: &Child, p: &Parser, resp: &mut Vec<char>) -> ChildToJs
 
             let is_template = tag.name.eq(p, "template".chars());
             if is_template {
-                let result = if children_len == 1 && children.get(0).unwrap().is_v_for() {
-                    children_to_js(children, p, resp)
+                if children_len == 0 {
+                    write_str("void 0", resp);
                 } else {
-                    resp.push('[');
-                    let result = children_to_js(children, p, resp);
-                    resp.push(']');
-                    result
-                };
+                    let result = if children_len == 1 && children.get(0).unwrap().is_v_for() {
+                        children_to_js(children, p, resp)
+                    } else {
+                        resp.push('[');
+                        let result = children_to_js(children, p, resp);
+                        resp.push(']');
+                        result
+                    };
 
-                if let Some(magic_number) = result.add_magic_number {
-                    artifacts.move_v_for_magic_number_up = Some(magic_number);
-                    artifacts.is_v_for = true;
+                    if let Some(magic_number) = result.add_magic_number {
+                        artifacts.move_v_for_magic_number_up = Some(magic_number);
+                        artifacts.is_v_for = true;
+                    }
                 }
             } else {
                 // Writes:

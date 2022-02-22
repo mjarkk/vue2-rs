@@ -541,8 +541,8 @@ mod tests {
         #[test]
         fn template_tag() {
             // empty template tag
-            template_to_js_eq("<div><template /></div>", "_c('div',[[]])");
-            template_to_js_eq("<div><template></template></div>", "_c('div',[[]])");
+            template_to_js_eq("<div><template /></div>", "_c('div',[void 0])");
+            template_to_js_eq("<div><template></template></div>", "_c('div',[void 0])");
 
             // template with tag inside
             template_to_js_eq(
@@ -553,13 +553,13 @@ mod tests {
             // test template inside of template
             template_to_js_eq(
                 "<div><template><template /></template></div>",
-                "_c('div',[[[]]])",
+                "_c('div',[[void 0]])",
             );
 
             // test template using v-if
             template_to_js_eq(
                 "<div><template v-if='some_var'/></div>",
-                "_c('div',[_vm.some_var?[]:_vm._e()])",
+                "_c('div',[_vm.some_var?void 0:_vm._e()])",
             );
 
             // test template using v-for
