@@ -38,8 +38,8 @@ This is a project that is in progress
         - [x] Custom (`v-custom-directive`)
     - [ ] Support for `<template>` element
       - [ ] Args
-        - [ ] `v-if`
-        - [ ] `v-for`
+        - [x] `v-if`
+        - [x] `v-for`
         - [ ] `v-pre`
         - [ ] `v-slot`
         - [ ] `v-text`
@@ -53,7 +53,7 @@ This is a project that is in progress
   - [x] Basic start and end detection (`<style>..</style>`)
   - [ ] Style parsing
 - Vite stuff
-  - [ ] Transpiling of Vue components
+  - [x] Transpiling of Vue components
   - [ ] Component error handling
   - [ ] Hot Module Reloading
 - Other
