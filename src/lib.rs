@@ -62,7 +62,9 @@ impl Plugin {
             ParsedId::Other => None,
             ParsedId::Main => {
                 // TODO remove unwrap
-                Some(self.transform_main(code, id).unwrap())
+                let mut resp: Vec<char> = Vec::new();
+                self.transform_main(code, id, &mut resp).unwrap();
+                Some(resp.iter().collect())
             }
             ParsedId::Style(_, _) => {
                 log!("TODO transform style {}", id);
@@ -71,14 +73,18 @@ impl Plugin {
         }
     }
 
-    fn transform_main(&mut self, code: &str, id: &str) -> Result<String, ParserError> {
+    fn transform_main(
+        &mut self,
+        code: &str,
+        id: &str,
+        resp: &mut Vec<char>,
+    ) -> Result<(), ParserError> {
         let parsed_code = Parser::new_and_parse(code)?;
 
         let script = parsed_code.script.as_ref();
         let template = parsed_code.template.as_ref();
         let styles = &parsed_code.styles;
 
-        let mut resp: Vec<char> = Vec::new();
         if styles.len() != 0 {
             let mut cache = Vec::with_capacity(styles.len());
 
@@ -92,13 +98,13 @@ impl Plugin {
 
                     // Writes:
                     // id.vue?vue&type=style&index=0&lang.css
-                    write_str("import '", &mut resp);
-                    write_str_escaped(id, '\'', '\\', &mut resp);
-                    write_str("?vue&type=style&index=", &mut resp);
-                    write_str(&index.to_string(), &mut resp);
-                    write_str("&lang.", &mut resp);
-                    write_str(&lang_extension, &mut resp);
-                    write_str("';\n", &mut resp);
+                    write_str("import '", resp);
+                    write_str_escaped(id, '\'', '\\', resp);
+                    write_str("?vue&type=style&index=", resp);
+                    write_str(&index.to_string(), resp);
+                    write_str("&lang.", resp);
+                    write_str(&lang_extension, resp);
+                    write_str("';\n", resp);
                 }
             }
 
@@ -106,36 +112,58 @@ impl Plugin {
         }
 
         if script.is_none() && template.is_none() {
-            write_str("export default undefined;", &mut resp);
-            return Ok(resp.iter().collect());
+            write_str("export default undefined;", resp);
+            return Ok(());
         }
 
         if let Some(script) = script {
             if let Some(default_export_location) = script.default_export_location.as_ref() {
                 SourceLocation(script.content.0, default_export_location.0)
-                    .write_to_vec(&parsed_code, &mut resp);
+                    .write_to_vec(&parsed_code, resp);
 
-                write_str("\nconst __vue_2_file_default_export__ =", &mut resp);
+                write_str("\nconst __vue_2_file_default_export__ =", resp);
 
                 SourceLocation(default_export_location.1, script.content.1)
-                    .write_to_vec(&parsed_code, &mut resp);
+                    .write_to_vec(&parsed_code, resp);
             } else {
-                script.content.write_to_vec(&parsed_code, &mut resp);
-                write_str("\nconst __vue_2_file_default_export__ = {}", &mut resp);
+                script.content.write_to_vec(&parsed_code, resp);
+                write_str("\nconst __vue_2_file_default_export__ = {}", resp);
             }
         } else {
-            write_str("\nconst __vue_2_file_default_export__ = {};", &mut resp);
+            write_str("\nconst __vue_2_file_default_export__ = {};", resp);
         }
 
-        template_to_js(&parsed_code, &mut resp);
-        resp.append(
-            &mut "\nexport default __vue_2_file_default_export__;"
-                .chars()
-                .collect::<Vec<char>>(),
-        );
+        // Write the renderer to the result
+        template_to_js(&parsed_code, resp);
 
-        Ok(resp.iter().collect())
+        // Write the _scopeId to the result
+        write_str("\n__vue_2_file_default_export__._scopeId = 'data-v-", resp);
+        write_str(&simple_hash_crypto_unsafe(id), resp);
+        resp.push('\'');
+
+        write_str("\nexport default __vue_2_file_default_export__;", resp);
+
+        Ok(())
     }
+}
+
+fn simple_hash_crypto_unsafe(input: &str) -> String {
+    let mut hash: [u8; 8] = [0; 8];
+
+    for (index, b) in input.as_bytes().iter().enumerate() {
+        let index_in_hash = index % 8;
+        hash[index_in_hash] ^= b;
+    }
+
+    let hex_chars = [
+        '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f',
+    ];
+    let mut resp = String::with_capacity(16);
+    for b in hash {
+        resp.push(hex_chars[(b >> 4) as usize]);
+        resp.push(hex_chars[(b & 0x0F) as usize]);
+    }
+    resp
 }
 
 enum ParsedId<'a> {

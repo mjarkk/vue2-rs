@@ -8,10 +8,10 @@
     <template v-if="count" />
     <template v-for="(key, index) in list">{{ key }} #{{ index }}</template> -->
 
-    <div v-if="count">
+    <div class="foo" v-if="count">
       If <span>{{ count }}</span> !
     </div>
-    <div v-else>Else {{ count }}</div>
+    <div class="bar" v-else>Else {{ count }}</div>
     <div v-if="!count">Another else</div>
     <div>
       <button v-on:click="count++">+</button>
@@ -42,15 +42,15 @@ export default defineComponent({
 });
 </script>
 
-<style>
+<style scoped>
 .foo {
   color: red;
 }
 .bar {
   color: blue;
 }
-* {
+/* * {
   font-family: sans-serif;
   font-size: 22px;
-}
+} */
 </style>

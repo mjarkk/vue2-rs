@@ -8,7 +8,7 @@ use std::slice::Iter;
 */
 
 const DEFAULT_CONF: &'static str = "
-__vue_2_file_default_export__.render = function(c) {
+\n__vue_2_file_default_export__.render = function(c) {
     const _vm = this;
     const _h = _vm.$createElement;
     const _c = _vm._self._c || _h;
