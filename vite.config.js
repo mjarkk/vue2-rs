@@ -1,60 +1,64 @@
 import { defineConfig } from 'vite'
 import { createVuePlugin } from 'vite-plugin-vue2'
-import { resolve_id, load, transform } from './pkg/vue2_rs.js'
+import { Plugin } from './pkg/vue2_rs.js'
 import Inspect from 'vite-plugin-inspect'
 
 const vuePlugin = createVuePlugin()
 
-const vuePluginProxy = {
-    name: 'vite-plugin-vue2',
+const newVue2Plugin = () => {
+    const plugin = new Plugin()
 
-    // config(config) {
-    //     return vuePlugin.config(config)
-    // },
+    return {
+        name: 'vite-plugin-vue2',
 
-    // handleHotUpdate(ctx) {
-    //     return vuePlugin.handleHotUpdate(ctx)
-    // },
+        // config(config) {
+        //     return vuePlugin.config(config)
+        // },
 
-    // configResolved(config) {
-    //     return vuePlugin.configResolved(config)
-    // },
+        // handleHotUpdate(ctx) {
+        //     return vuePlugin.handleHotUpdate(ctx)
+        // },
 
-    // configureServer(server) {
-    //     return vuePlugin.configureServer(server)
-    // },
+        // configResolved(config) {
+        //     return vuePlugin.configResolved(config)
+        // },
 
-    // // Returns should return virtual ids
-    // async resolveId(id) {
-    //     // resolve_id(id)
+        // configureServer(server) {
+        //     return vuePlugin.configureServer(server)
+        // },
 
-    //     const resp = await vuePlugin.resolveId(id)
-    //     // if (resp) console.log(id, '>', resp)
-    //     return resp
-    // },
+        // // Returns should return virtual ids
+        // async resolveId(id) {
+        //     // resolve_id(id)
 
-    // Returns the file contents for a virtual ID
-    load(id) {
-        return load(id)
-        // const resp = vuePlugin.load(id)
-        // if (resp) console.log(id)
-        // return resp
-    },
+        //     const resp = await vuePlugin.resolveId(id)
+        //     // if (resp) console.log(id, '>', resp)
+        //     return resp
+        // },
 
-    // transforms the code into the module
-    async transform(code, id) {
-        // const t1 = performance.now()
-        const transformedCode = transform(code, id)
-        if (transformedCode) {
-            return { code: transformedCode, map: null }
-        }
-        // const t2 = performance.now()
-        // const resp = await vuePlugin.transform(code, id)
-        // const t3 = performance.now()
-        // // console.log(`${t2 - t1} - ${t3 - t2}`)
-        // // if (resp) console.log(resp)
-        // return resp
-    },
+        // Returns the file contents for a virtual ID
+        load(id) {
+            return plugin.load(id)
+            // const resp = vuePlugin.load(id)
+            // if (resp) console.log(id)
+            // return resp
+        },
+
+        // transforms the code into the module
+        async transform(code, id) {
+            // const t1 = performance.now()
+            const transformedCode = plugin.transform(code, id)
+            if (transformedCode) {
+                return { code: transformedCode, map: null }
+            }
+            // const t2 = performance.now()
+            // const resp = await vuePlugin.transform(code, id)
+            // const t3 = performance.now()
+            // // console.log(`${t2 - t1} - ${t3 - t2}`)
+            // // if (resp) console.log(resp)
+            // return resp
+        },
+    }
 }
 
 export default defineConfig({
@@ -63,7 +67,7 @@ export default defineConfig({
     plugins: [
         Inspect(),
         // vuePlugin,
-        vuePluginProxy,
+        newVue2Plugin(),
     ]
 })
 

@@ -52,7 +52,7 @@ This is a project that is in progress
 - Style
   - [x] Basic start and end detection (`<style>..</style>`)
   - [ ] Style parsing
-  - [ ] Global
+  - [x] Global
   - [ ] Scoped
 - Vite stuff
   - [x] Transpiling of Vue components
