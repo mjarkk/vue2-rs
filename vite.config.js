@@ -33,13 +33,13 @@ const vuePluginProxy = {
     //     return resp
     // },
 
-    // // Returns the file contents for a virtual ID
-    // load(id) {
-    //     // load(id)
-    //     const resp = vuePlugin.load(id)
-    //     if (resp) console.log(id)
-    //     return resp
-    // },
+    // Returns the file contents for a virtual ID
+    load(id) {
+        return load(id)
+        // const resp = vuePlugin.load(id)
+        // if (resp) console.log(id)
+        // return resp
+    },
 
     // transforms the code into the module
     async transform(code, id) {

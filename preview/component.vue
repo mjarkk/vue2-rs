@@ -1,6 +1,13 @@
 <template>
   <div>
-    <h1>It wurks {{ count }}!</h1>
+    <!-- <template />
+    <template><template /></template>
+    <template>
+      <h1>It wurks {{ count }}!</h1>
+    </template>
+    <template v-if="count" />
+    <template v-for="(key, index) in list">{{ key }} #{{ index }}</template> -->
+
     <div v-if="count">
       If <span>{{ count }}</span> !
     </div>
@@ -10,7 +17,7 @@
       <button v-on:click="count++">+</button>
       <button @click="count--">-</button>
     </div>
-    <div v-text="'abc'" />
+    <!-- <div v-text="'abc'" />
     <div v-html="'abc'" />
     <div v-show="false"><div /></div>
     <div foo="bar">
@@ -19,7 +26,7 @@
       </span>
     </div>
     <input v-model="inputValue" />
-    {{ inputValue }}
+    {{ inputValue }} -->
   </div>
 </template>
 
@@ -34,3 +41,12 @@ export default defineComponent({
   }),
 });
 </script>
+
+<style>
+.foo {
+  color: red;
+}
+.bar {
+  color: blue;
+}
+</style>

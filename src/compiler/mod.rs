@@ -290,12 +290,12 @@ impl SourceLocation {
         &self,
         parser: &Parser,
         dest: &mut Vec<char>,
-        qoute: char,
+        quote: char,
         escape_char: char,
     ) {
         for c in self.chars(parser) {
             let cc = *c;
-            if cc == qoute || cc == escape_char {
+            if cc == quote || cc == escape_char {
                 dest.push(escape_char);
             }
             dest.push(*c);

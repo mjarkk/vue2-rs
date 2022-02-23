@@ -52,6 +52,8 @@ This is a project that is in progress
 - Style
   - [x] Basic start and end detection (`<style>..</style>`)
   - [ ] Style parsing
+  - [ ] Global
+  - [ ] Scoped
 - Vite stuff
   - [x] Transpiling of Vue components
   - [ ] Component error handling
@@ -66,6 +68,7 @@ This is a project that is in progress
 - [html spec](https://html.spec.whatwg.org/multipage/syntax.html)
 - [vue file spec](https://vue-loader.vuejs.org/spec.html#intro)
 - [vite writing a plugin](https://vitejs.dev/guide/api-plugin.html)
+- [wasm-bindgen docs](https://rustwasm.github.io/docs/wasm-bindgen/examples/web-audio.html)
 
 ### Build WASM file and run vite to test
 
