@@ -1,5 +1,6 @@
 pub mod error;
 pub mod js;
+pub mod style;
 pub mod template;
 pub mod tests;
 pub mod utils;

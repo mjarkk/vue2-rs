@@ -169,7 +169,7 @@ fn simple_hash_crypto_unsafe(input: &str) -> String {
 enum ParsedId<'a> {
     Other,               // Not a vue file
     Main,                // The global vue file
-    Style(&'a str, u16), // A style from the vue file
+    Style(&'a str, u16), // Targets a style within a vue file
 }
 
 impl<'a> ParsedId<'a> {
