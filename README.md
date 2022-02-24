@@ -50,13 +50,16 @@ This is a project that is in progress
   - [x] Inject JS render function from template
   - [ ] Support other script languages (typescript)
   - [ ] Inject styles
+    - [x] Global
+    - [ ] Scoped
 - Style
   - [x] Basic start and end detection (`<style>..</style>`)
   - [ ] Style parsing
   - [x] Global
-  - [ ] Scoped
+  - [ ] [Scoped](https://vue-loader.vuejs.org/guide/scoped-css.html#scoped-css)
+    - [ ] [Deep selectors](https://vue-loader.vuejs.org/guide/scoped-css.html#mixing-local-and-global-styles)
 - Vite stuff
-  - [x] Transpiling of Vue components
+  - [x] Compiling of Vue components
   - [ ] Component error handling
   - [ ] Hot Module Reloading
 - Other

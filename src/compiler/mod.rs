@@ -38,6 +38,7 @@ pub struct Template {
 pub struct Style {
     pub lang: Option<String>,
     pub scoped: bool,
+    pub scoped_selector_injection_points: Option<Vec<usize>>,
     pub content: SourceLocation,
 }
 
@@ -60,6 +61,10 @@ impl Parser {
         let mut p = Self::new(source);
         p.parse()?;
         Ok(p)
+    }
+
+    fn seek_one_or_null(&mut self) -> char {
+        self.seek_one().unwrap_or(0 as char)
     }
 
     fn seek_one(&mut self) -> Option<char> {
@@ -150,18 +155,25 @@ impl Parser {
                             });
                         },
                         TopLevelTag::Style => {
-                            let style_start = self.current_char;
-                            let SourceLocation(style_end, _) = self.look_for("</style>".chars().collect())?;
-
                             let scoped = match top_level_tag.1.args.has_attr_or_prop("scoped") {
                                 Some("true") => true,
                                 _ => false,
                             };
 
+                            let (content_location, scoped_selector_injection_points) = match (scoped, lang.as_ref().map(|v| v.as_str())) {
+                                (true, None) | (true, Some("css")) => {
+                                    let start = self.current_char;
+                                    let injection_points = style::parse_scoped_css(self)?;
+                                    (SourceLocation(start, self.current_char-8), Some(injection_points))
+                                }
+                                _ => (SourceLocation(self.current_char, self.look_for("</style>".chars().collect())?.0), None),
+                            };
+
                             self.styles.push(Style{
                                 lang,
                                 scoped,
-                                content: SourceLocation(style_start, style_end),
+                                scoped_selector_injection_points,
+                                content:content_location,
                             });
                         },
                     }
