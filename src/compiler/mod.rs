@@ -173,7 +173,7 @@ impl Parser {
                                 lang,
                                 scoped,
                                 scoped_selector_injection_points,
-                                content:content_location,
+                                content: content_location,
                             });
                         },
                     }

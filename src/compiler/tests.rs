@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod tests {
+    use super::super::style;
     use super::super::template::*;
     use super::super::*;
 
@@ -672,6 +673,61 @@ mod tests {
                 vec!["this", "this"],
                 "_vm.foo && _vm.bar",
             );
+        }
+    }
+
+    mod style_tests {
+        use super::*;
+
+        fn parse_style(style: &str) {
+            let mut parser = Parser::new(&format!("{}</style>", style));
+            style::parse_scoped_css(&mut parser).unwrap();
+        }
+
+        #[test]
+        fn empty() {
+            parse_style("");
+        }
+
+        #[test]
+        fn basic_selector() {
+            parse_style("foo {}");
+            parse_style("foo{}");
+        }
+
+        #[test]
+        fn invalid_selector_should_not_panic() {
+            parse_style("this selector is not valid as it does not contain a body")
+        }
+
+        #[test]
+        fn complex_selector_1() {
+            parse_style("foo bar {}");
+            parse_style("foo bar baz {}");
+        }
+
+        #[test]
+        fn complex_selector_2() {
+            parse_style("foo + bar {}");
+            parse_style("foo,bar {}");
+            parse_style("foo~bar {}");
+        }
+
+        #[test]
+        fn complex_selector_3() {
+            parse_style("foo[arg] {}");
+            parse_style("foo[arg]:hover {}");
+            parse_style("foo[arg]:hover bar[baz]:bar_baz {}");
+        }
+
+        #[test]
+        fn multiple_selectors() {
+            parse_style(concat![
+                "foo {}\n",
+                "bar, baz bar_foo {}\n",
+                "banana + peer[with_arg] {}\n",
+                "peer:hover, peer:focus {}\n",
+            ]);
         }
     }
 }
