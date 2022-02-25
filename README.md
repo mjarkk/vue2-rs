@@ -15,6 +15,8 @@ This is a project that is in progress
     - [x] Tags
     - [x] Text
     - [x] Vars
+  - [ ] Source maps
+  - [ ] Pug support?
   - [ ] Convert to JS render method
     - [x] Static text
     - [x] Var (`{{ foo+bar }}`)
@@ -44,17 +46,18 @@ This is a project that is in progress
         - [ ] `v-slot`
         - [ ] `v-text`
         - [ ] `v-html`
-    - [ ] Pug support?
 - Script
   - [x] Basic start and end detection (`<script>..</script>`)
   - [x] Inject JS render function from template
   - [ ] Support other script languages (typescript)
+  - [ ] Source maps
   - [ ] Inject styles
     - [x] Global
     - [ ] Scoped
 - Style
   - [x] Basic start and end detection (`<style>..</style>`)
-  - [ ] Style parsing
+  - [x] Style parsing
+  - [ ] Source maps
   - [x] Global
   - [ ] [Scoped](https://vue-loader.vuejs.org/guide/scoped-css.html#scoped-css)
     - [ ] [Deep selectors](https://vue-loader.vuejs.org/guide/scoped-css.html#mixing-local-and-global-styles)
