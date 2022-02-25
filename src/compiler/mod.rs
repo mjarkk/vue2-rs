@@ -35,10 +35,15 @@ pub struct Template {
 }
 
 #[derive(Debug, Clone)]
-pub struct Style {
+pub enum Style {
+    Normal(NormalStyle),
+    DirectScopedCSS(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct NormalStyle {
     pub lang: Option<String>,
     pub scoped: bool,
-    pub scoped_selector_injection_points: Option<Vec<usize>>,
     pub content: SourceLocation,
 }
 
@@ -160,23 +165,26 @@ impl Parser {
                                 _ => false,
                             };
 
-                            let (content_location, scoped_selector_injection_points) = match (scoped, lang.as_ref().map(|v| v.as_str())) {
+                            match (scoped, lang.as_ref().map(|v| v.as_str())) {
                                 (true, None) | (true, Some("css")) => {
                                     let start = self.current_char;
                                     let injection_points = style::parse_scoped_css(self, style::SelectorsEnd::StyleClosure)?;
                                     let style_location = SourceLocation(start, self.current_char-8);
-                                    style::gen_scoped_css(self, &style_location, injection_points, id);
-                                    (style_location, None)
+                                    let scoped_style = style::gen_scoped_css(self, style_location, injection_points, id);
+                                    self.styles.push(Style::DirectScopedCSS(scoped_style))
                                 }
-                                _ => (SourceLocation(self.current_char, self.look_for("</style>".chars().collect())?.0), None),
-                            };
+                                _ => {
+                                    let style_start = self.current_char;
+                                    let style_end = self.look_for("</style>".chars().collect())?.0;
+                                    let content = SourceLocation(style_start, style_end);
 
-                            self.styles.push(Style{
-                                lang,
-                                scoped,
-                                scoped_selector_injection_points,
-                                content: content_location,
-                            });
+                                    self.styles.push(Style::Normal(NormalStyle{
+                                        lang,
+                                        scoped,
+                                        content,
+                                    }));
+                                }
+                            };
                         },
                     }
                 },

@@ -51,9 +51,9 @@ This is a project that is in progress
   - [x] Inject JS render function from template
   - [ ] Support other script languages (typescript)
   - [ ] Source maps
-  - [ ] Inject styles
+  - [x] Inject styles
     - [x] Global
-    - [ ] Scoped
+    - [x] Scoped
 - Style
   - [x] Basic start and end detection (`<style>..</style>`)
   - [x] Style parsing

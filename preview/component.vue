@@ -49,6 +49,11 @@ export default defineComponent({
 .bar {
   color: blue;
 }
+
+* {
+  font-weight: bold;
+}
+
 /* * {
   font-family: sans-serif;
   font-size: 22px;

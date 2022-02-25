@@ -1,18 +1,12 @@
 use super::{utils, Parser, ParserError, QuoteKind, SourceLocation};
 
 /*
-
-TODO: Support :NOT(.foo,.bar)
-
-TODO: Support vue's deep selectors
-">>>", "::v-deep", "/deep/"
-https://vue-loader.vuejs.org/guide/scoped-css.html#child-component-root-elements
-
+    TODO: Support :NOT(.foo,.bar)
 */
 
 pub fn gen_scoped_css(
     p: &mut Parser,
-    style_location: &SourceLocation,
+    style_location: SourceLocation,
     injection_points: Vec<usize>,
     id: &str,
 ) -> String {
@@ -342,7 +336,7 @@ fn is_style_close_tag(p: &mut Parser) -> bool {
 fn is_combinator(c: char) -> bool {
     match c {
         c if utils::is_space(c) => true,
-        ',' | '*' | '>' | '+' | '~' => true,
+        ',' | '>' | '+' | '~' => true,
         _ => false,
     }
 }

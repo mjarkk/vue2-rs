@@ -3,7 +3,7 @@ mod utils;
 
 use compiler::template::to_js::template_to_js;
 use compiler::utils::{write_str, write_str_escaped};
-use compiler::{error::ParserError, Parser, SourceLocation};
+use compiler::{error::ParserError, style, Parser, SourceLocation, Style};
 use std::collections::HashMap;
 use wasm_bindgen::prelude::*;
 
@@ -22,6 +22,7 @@ pub struct Plugin {
 impl Plugin {
     #[wasm_bindgen(constructor)]
     pub fn new() -> Self {
+        utils::set_panic_hook();
         Self {
             styles_cache: HashMap::new(),
         }
@@ -29,20 +30,17 @@ impl Plugin {
 
     #[wasm_bindgen]
     pub fn resolve_id(&mut self, _id: &str) {
-        utils::set_panic_hook();
         // log!("resolve_id {}", id);
     }
 
     #[wasm_bindgen]
     pub fn load(&mut self, id: &str) -> Option<String> {
-        utils::set_panic_hook();
-
         match ParsedId::parse(id) {
             ParsedId::Other => None,
             ParsedId::Main => None,
-            ParsedId::Style(component_id, index) => {
-                if let Some(styles) = self.styles_cache.get(component_id) {
-                    if let Some(style) = styles.get(index as usize) {
+            ParsedId::Style(style) => {
+                if let Some(styles) = self.styles_cache.get(style.id) {
+                    if let Some(style) = styles.get(style.index as usize) {
                         Some(style.clone())
                     } else {
                         Some(String::new())
@@ -56,19 +54,30 @@ impl Plugin {
 
     #[wasm_bindgen]
     pub fn transform(&mut self, code: &str, id: &str) -> Option<String> {
-        utils::set_panic_hook();
-
         match ParsedId::parse(id) {
             ParsedId::Other => None,
             ParsedId::Main => {
-                // TODO remove unwrap
                 let mut resp: Vec<char> = Vec::new();
+                // TODO remove unwrap
                 self.transform_main(code, id, &mut resp).unwrap();
                 Some(resp.iter().collect())
             }
-            ParsedId::Style(_, _) => {
-                log!("TODO transform style {}", id);
-                None
+            ParsedId::Style(style_data) => {
+                if style_data.scoped {
+                    let mut parser = Parser::new(code);
+                    // TODO remove unwrap
+                    let injection_points =
+                        style::parse_scoped_css(&mut parser, style::SelectorsEnd::EOF).unwrap();
+
+                    Some(style::gen_scoped_css(
+                        &mut parser,
+                        SourceLocation(0, code.len()),
+                        injection_points,
+                        &simple_hash_crypto_unsafe(id),
+                    ))
+                } else {
+                    None
+                }
             }
         }
     }
@@ -89,24 +98,38 @@ impl Plugin {
         if styles.len() != 0 {
             let mut cache = Vec::with_capacity(styles.len());
 
-            for (index, style) in styles.iter().enumerate() {
-                if style.scoped {
-                    cache.push(String::new());
-                    todo!("scoped style");
-                } else {
-                    cache.push(style.content.string(&parsed_code));
-                    let lang_extension = style.lang.as_ref().map(|v| v.as_str()).unwrap_or("css");
+            for (index, style_kind) in styles.iter().enumerate() {
+                // Writes:
+                // id.vue?vue&type=style&index=0&lang.css
+                // Or
+                // id.vue?vue&type=style&index=0&scoped=true&lang.css
+                write_str("import '", resp);
+                write_str_escaped(id, '\'', '\\', resp);
+                write_str("?vue&type=style&index=", resp);
+                write_str(&index.to_string(), resp);
 
-                    // Writes:
-                    // id.vue?vue&type=style&index=0&lang.css
-                    write_str("import '", resp);
-                    write_str_escaped(id, '\'', '\\', resp);
-                    write_str("?vue&type=style&index=", resp);
-                    write_str(&index.to_string(), resp);
-                    write_str("&lang.", resp);
-                    write_str(&lang_extension, resp);
-                    write_str("';\n", resp);
-                }
+                match style_kind {
+                    Style::Normal(style) => {
+                        cache.push(style.content.string(&parsed_code));
+
+                        if style.scoped {
+                            write_str("&scoped=true", resp);
+                        }
+
+                        let lang_extension =
+                            style.lang.as_ref().map(|v| v.as_str()).unwrap_or("css");
+                        write_str("&lang.", resp);
+                        write_str(&lang_extension, resp);
+                    }
+                    Style::DirectScopedCSS(style) => {
+                        cache.push(style.clone());
+
+                        write_str("&pre-scoped=true", resp);
+                        write_str("&lang.css", resp);
+                    }
+                };
+
+                write_str("';\n", resp);
             }
 
             self.styles_cache.insert(id.to_string(), cache);
@@ -148,7 +171,7 @@ impl Plugin {
     }
 }
 
-fn simple_hash_crypto_unsafe(input: &str) -> String {
+pub fn simple_hash_crypto_unsafe(input: &str) -> String {
     let mut hash: [u8; 8] = [0; 8];
 
     for (index, b) in input.as_bytes().iter().enumerate() {
@@ -168,9 +191,15 @@ fn simple_hash_crypto_unsafe(input: &str) -> String {
 }
 
 enum ParsedId<'a> {
-    Other,               // Not a vue file
-    Main,                // The global vue file
-    Style(&'a str, u16), // Targets a style within a vue file
+    Other,                  // Not a vue file
+    Main,                   // The global vue file
+    Style(TargetStyle<'a>), // Targets a style within a vue file
+}
+
+struct TargetStyle<'a> {
+    id: &'a str,
+    index: u16,
+    scoped: bool,
 }
 
 impl<'a> ParsedId<'a> {
@@ -184,6 +213,7 @@ impl<'a> ParsedId<'a> {
             // vue&type=style&index=0&lang.css
             let mut import_type = ImportType::Main;
             let mut index = 0u16;
+            let mut scoped = false;
 
             for elem in args.split('&') {
                 if let Some((key, value)) = elem.split_once('=') {
@@ -199,6 +229,9 @@ impl<'a> ParsedId<'a> {
                                 index = new_index;
                             }
                         }
+                        "scoped" => {
+                            scoped = true;
+                        }
                         _ => {}
                     }
                 };
@@ -206,7 +239,11 @@ impl<'a> ParsedId<'a> {
 
             match import_type {
                 ImportType::Main => ParsedId::Main,
-                ImportType::Style => ParsedId::Style(first, index),
+                ImportType::Style => ParsedId::Style(TargetStyle {
+                    id: first,
+                    index,
+                    scoped,
+                }),
             }
         } else if id.ends_with(".vue") {
             Self::Main
