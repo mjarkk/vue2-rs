@@ -287,13 +287,13 @@ impl SourceLocation {
             &parser.source_chars[self.0..self.1]
         }
     }
-    pub fn chars_vec(&self, parser: &Parser) -> Vec<char> {
-        if self.is_empty() {
-            parser.source_chars[self.0..self.1].into()
-        } else {
-            Vec::new()
-        }
-    }
+    // pub fn chars_vec(&self, parser: &Parser) -> Vec<char> {
+    //     if self.is_empty() {
+    //         parser.source_chars[self.0..self.1].into()
+    //     } else {
+    //         Vec::new()
+    //     }
+    // }
     pub fn write_to_vec(&self, parser: &Parser, dest: &mut Vec<char>) {
         for c in self.chars(parser) {
             dest.push(*c);

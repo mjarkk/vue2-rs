@@ -51,7 +51,8 @@ pub fn parse_scoped_css(p: &mut Parser, end: SelectorsEnd) -> Result<Vec<usize>,
     */
 
     let mut basic_selector_ends: Vec<usize> = Vec::new();
-    if let Err(e) = parse_selectors(p, &mut basic_selector_ends, &end) {
+    let parsing_result = parse_selectors(p, &mut basic_selector_ends, &end);
+    if let Err(e) = parsing_result {
         if SelectorsEnd::EOF != end || !e.is_eof() {
             return Err(e);
         }
@@ -148,7 +149,7 @@ fn parse_at(
     let name_location = SourceLocation(name_start, p.current_char - 1);
 
     if parse_args_next {
-        if !arg_open {
+        if arg_open {
             parse_arg(p)?;
         } else if arg_string {
             p.current_char -= 1;
@@ -157,7 +158,7 @@ fn parse_at(
         loop {
             match p.must_read_one()? {
                 '\'' => p.parse_quotes(QuoteKind::JSSingle, &mut None)?,
-                '"' => p.parse_quotes(QuoteKind::JSSingle, &mut None)?,
+                '"' => p.parse_quotes(QuoteKind::JSDouble, &mut None)?,
                 '{' => break,
                 '(' => parse_arg(p)?,
                 ';' => {
@@ -201,7 +202,7 @@ fn parse_arg(p: &mut Parser) -> Result<(), ParserError> {
     loop {
         match p.must_read_one()? {
             '\'' => p.parse_quotes(QuoteKind::JSSingle, &mut None)?,
-            '"' => p.parse_quotes(QuoteKind::JSSingle, &mut None)?,
+            '"' => p.parse_quotes(QuoteKind::JSDouble, &mut None)?,
             ')' => return Ok(()),
             '/' if p.seek_one_or_null() == '*' => {
                 // This is the start of a comment
@@ -216,7 +217,7 @@ fn parse_selector_content(p: &mut Parser) -> Result<(), ParserError> {
     loop {
         match p.must_read_one()? {
             '\'' => p.parse_quotes(QuoteKind::JSSingle, &mut None)?,
-            '"' => p.parse_quotes(QuoteKind::JSSingle, &mut None)?,
+            '"' => p.parse_quotes(QuoteKind::JSDouble, &mut None)?,
             '}' => return Ok(()),
             '{' => parse_selector_content(p)?,
             '/' if p.seek_one_or_null() == '*' => {

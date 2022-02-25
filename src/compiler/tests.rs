@@ -679,9 +679,15 @@ mod tests {
     mod style_tests {
         use super::*;
 
-        fn parse_style(style: &str) {
-            let mut parser = Parser::new(style);
+        fn parse_style(css: &str) {
+            let mut parser = Parser::new(css);
             style::parse_scoped_css(&mut parser, style::SelectorsEnd::EOF).unwrap();
+
+            parser = Parser::new(&format!("{}</style>", css));
+            style::parse_scoped_css(&mut parser, style::SelectorsEnd::StyleClosure).unwrap();
+
+            parser = Parser::new(&format!("{}{}", css, "}"));
+            style::parse_scoped_css(&mut parser, style::SelectorsEnd::ClosingBracket).unwrap();
         }
 
         #[test]
