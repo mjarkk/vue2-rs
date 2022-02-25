@@ -57,9 +57,9 @@ impl Parser {
         };
     }
 
-    pub fn new_and_parse(source: &str) -> Result<Self, ParserError> {
+    pub fn new_and_parse(source: &str, id: &str) -> Result<Self, ParserError> {
         let mut p = Self::new(source);
-        p.parse()?;
+        p.parse(id)?;
         Ok(p)
     }
 
@@ -113,7 +113,7 @@ impl Parser {
         }
     }
 
-    pub fn parse(&mut self) -> Result<(), ParserError> {
+    pub fn parse(&mut self, id: &str) -> Result<(), ParserError> {
         while let Some(b) = self.read_one_skip_spacing() {
             match b {
                 '<' => {
@@ -164,7 +164,9 @@ impl Parser {
                                 (true, None) | (true, Some("css")) => {
                                     let start = self.current_char;
                                     let injection_points = style::parse_scoped_css(self, style::SelectorsEnd::StyleClosure)?;
-                                    (SourceLocation(start, self.current_char-8), Some(injection_points))
+                                    let style_location = SourceLocation(start, self.current_char-8);
+                                    style::gen_scoped_css(self, &style_location, injection_points, id);
+                                    (style_location, None)
                                 }
                                 _ => (SourceLocation(self.current_char, self.look_for("</style>".chars().collect())?.0), None),
                             };
@@ -295,6 +297,11 @@ impl SourceLocation {
     //     }
     // }
     pub fn write_to_vec(&self, parser: &Parser, dest: &mut Vec<char>) {
+        for c in self.chars(parser) {
+            dest.push(*c);
+        }
+    }
+    pub fn write_to_string(&self, parser: &Parser, dest: &mut String) {
         for c in self.chars(parser) {
             dest.push(*c);
         }

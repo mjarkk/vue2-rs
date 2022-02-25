@@ -25,7 +25,7 @@ mod tests {
 
     #[test]
     fn empty_template() {
-        let result = Parser::new_and_parse("").unwrap();
+        let result = Parser::new_and_parse("", "example").unwrap();
 
         assert!(result.template.is_none());
         assert!(result.script.is_none());
@@ -34,7 +34,8 @@ mod tests {
 
     #[test]
     fn simple_template() {
-        let result = Parser::new_and_parse("<template><h1>hello !</h1></template>").unwrap();
+        let result =
+            Parser::new_and_parse("<template><h1>hello !</h1></template>", "example").unwrap();
 
         let template_content = result.template.clone().unwrap().content;
         assert_eq!(template_content.len(), 1);
@@ -51,7 +52,8 @@ mod tests {
 
     #[test]
     fn template_with_script() {
-        let result = Parser::new_and_parse("<script>export default {}</script>").unwrap();
+        let result =
+            Parser::new_and_parse("<script>export default {}</script>", "example").unwrap();
 
         assert!(result.template.is_none());
         let script = result.script.as_ref().unwrap();
@@ -69,7 +71,7 @@ mod tests {
 
     #[test]
     fn template_with_style() {
-        let result = Parser::new_and_parse("<style>a {color: red;}</style>").unwrap();
+        let result = Parser::new_and_parse("<style>a {color: red;}</style>", "example").unwrap();
 
         assert!(result.template.is_none());
         assert!(result.script.is_none());
@@ -92,7 +94,7 @@ mod tests {
             <style lang=stylus other-arg=\"true\" scoped>h3 {color: blue;}</style>
         ";
 
-        let result = Parser::new_and_parse(input).unwrap();
+        let result = Parser::new_and_parse(input, "example").unwrap();
 
         assert_eq!(result.template.as_ref().unwrap().content.len(), 1);
 
@@ -137,6 +139,7 @@ mod tests {
         let result = Parser::new_and_parse(
             "<template></template>
             <template></template>",
+            "example",
         );
 
         assert_eq!(
@@ -150,6 +153,7 @@ mod tests {
         let result = Parser::new_and_parse(
             "<script></script>
             <script></script>",
+            "example",
         );
 
         assert_eq!(
@@ -174,6 +178,7 @@ mod tests {
                     </test3>
                 </div>
             </template>",
+            "example",
         )
         .unwrap();
 
@@ -231,6 +236,7 @@ mod tests {
             "<!DOCTYPE html>
             <template>
             </template>",
+            "example",
         )
         .unwrap();
 
@@ -239,6 +245,7 @@ mod tests {
             "<template>
             <!DOCTYPE html>
             </template>",
+            "example",
         )
         .unwrap();
     }
@@ -250,6 +257,7 @@ mod tests {
             "<!-- <template> This should not be parsed </template> -->
             <template>
             </template>",
+            "example",
         )
         .unwrap();
 
@@ -258,6 +266,7 @@ mod tests {
             "<template>
             <!-- <template> This should not be parsed </template> -->
             </template>",
+            "example",
         )
         .unwrap();
     }
@@ -286,7 +295,7 @@ mod tests {
                 case, "{}",
             );
 
-            Parser::new_and_parse(&testing_code).unwrap();
+            Parser::new_and_parse(&testing_code, "example").unwrap();
         }
     }
 
@@ -300,7 +309,7 @@ mod tests {
 
         fn template_to_js(html: &str) -> String {
             let parser_input = format!("<template>{}</template>", html);
-            let result = Parser::new_and_parse(&parser_input).unwrap();
+            let result = Parser::new_and_parse(&parser_input, "example").unwrap();
             let template = result.template.as_ref().unwrap();
 
             let mut resp: Vec<char> = Vec::new();
@@ -679,7 +688,7 @@ mod tests {
     mod style_tests {
         use super::*;
 
-        fn parse_style(css: &str) {
+        fn parse_style(css: &str, expected_result: &str) {
             let mut parser = Parser::new(css);
             style::parse_scoped_css(&mut parser, style::SelectorsEnd::EOF).unwrap();
 
@@ -687,65 +696,102 @@ mod tests {
             style::parse_scoped_css(&mut parser, style::SelectorsEnd::StyleClosure).unwrap();
 
             parser = Parser::new(&format!("{}{}", css, "}"));
-            style::parse_scoped_css(&mut parser, style::SelectorsEnd::ClosingBracket).unwrap();
+            let injection_points =
+                style::parse_scoped_css(&mut parser, style::SelectorsEnd::ClosingBracket).unwrap();
+
+            let scoped_css = style::gen_scoped_css(
+                &mut parser,
+                &SourceLocation(0, css.len()),
+                injection_points,
+                "example",
+            );
+
+            assert_eq!(scoped_css, expected_result);
         }
 
         #[test]
         fn empty() {
-            parse_style("");
+            parse_style("", "");
         }
 
         #[test]
         fn basic_selector() {
-            parse_style("foo {}");
-            parse_style("foo{}");
+            parse_style("foo {}", "foo[data-v-example] {}");
+            parse_style("foo{}", "foo[data-v-example]{}");
         }
 
         #[test]
         fn invalid_selector_should_not_panic() {
-            parse_style("this selector is not valid as it does not contain a body")
+            // It doesn't really matter these words are suffixed with [data-v-example] as it keeps being invalid css
+            parse_style(
+                "this selector is not valid as it does not contain a body",
+                "this[data-v-example] selector[data-v-example] is[data-v-example] not[data-v-example] valid[data-v-example] as[data-v-example] it[data-v-example] does[data-v-example] not[data-v-example] contain[data-v-example] a[data-v-example] body",
+            );
         }
 
         #[test]
         fn complex_selector_1() {
-            parse_style("foo bar {}");
-            parse_style("foo bar baz {}");
+            parse_style("foo bar {}", "foo[data-v-example] bar[data-v-example] {}");
+            parse_style(
+                "foo bar baz {}",
+                "foo[data-v-example] bar[data-v-example] baz[data-v-example] {}",
+            );
         }
 
         #[test]
         fn complex_selector_2() {
-            parse_style("foo + bar {}");
-            parse_style("foo,bar {}");
-            parse_style("foo~bar {}");
+            parse_style(
+                "foo + bar {}",
+                "foo[data-v-example] + bar[data-v-example] {}",
+            );
+            parse_style("foo,bar {}", "foo[data-v-example],bar[data-v-example] {}");
+            parse_style("foo~bar {}", "foo[data-v-example]~bar[data-v-example] {}");
         }
 
         #[test]
         fn complex_selector_3() {
-            parse_style("foo[arg] {}");
-            parse_style("foo[arg]:hover {}");
-            parse_style("foo[arg]:hover bar[baz]:bar_baz {}");
+            parse_style("foo[arg] {}", "foo[arg][data-v-example] {}");
+            parse_style("foo[arg]:hover {}", "foo[arg][data-v-example]:hover {}");
+            parse_style(
+                "foo[arg]:hover bar[baz]:bar_baz {}",
+                "foo[arg][data-v-example]:hover bar[baz][data-v-example]:bar_baz {}",
+            );
         }
 
         #[test]
         fn multiple_selectors() {
-            parse_style(concat![
-                "foo {}\n",
-                "bar, baz bar_foo {}\n",
-                "banana + peer[with_arg] {}\n",
-                "peer:hover, peer:focus {}\n",
-            ]);
+            parse_style(
+                "
+                foo {}
+                bar, baz bar_foo {}
+                banana + peer[with_arg] {}
+                peer:hover, peer:focus {}
+                ",
+                "
+                foo[data-v-example] {}
+                bar[data-v-example], baz[data-v-example] bar_foo[data-v-example] {}
+                banana[data-v-example] + peer[with_arg][data-v-example] {}
+                peer[data-v-example]:hover, peer[data-v-example]:focus {}
+                ",
+            );
         }
 
         #[test]
         fn comment() {
-            parse_style("/* foo { */ foo {}");
+            parse_style("/* foo { */ foo {}", "/* foo { */ foo[data-v-example] {}");
         }
 
         #[test]
         fn special() {
-            parse_style("@charset \"UTF-8\";");
-            parse_style("@namespace svg \"http://www.w3.org/2000/svg\";");
-            parse_style("@import 'http://example.com/style.css';");
+            parse_style("@charset \"UTF-8\";", "@charset \"UTF-8\";");
+            parse_style(
+                "@namespace svg \"http://www.w3.org/2000/svg\";",
+                "@namespace svg \"http://www.w3.org/2000/svg\";",
+            );
+            parse_style(
+                "@import 'http://example.com/style.css';",
+                "@import 'http://example.com/style.css';",
+            );
         }
 
         #[test]
@@ -753,6 +799,9 @@ mod tests {
             parse_style(
                 "@media(min-width: 1200px) {
                     h1, .h1 {font-size: 2.5rem;}
+                }",
+                "@media(min-width: 1200px) {
+                    h1[data-v-example], .h1[data-v-example] {font-size: 2.5rem;}
                 }",
             );
         }
@@ -762,7 +811,11 @@ mod tests {
             parse_style(
                 ".foo {
                     background-image: url(\"data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23fff'%3e%3cpath d='M11.354 1.646a.5.5 0 0 1 0 .708L5.707 8l5.647 5.646a.5.5 0 0 1-.708.708l-6-6a.5.5 0 0 1 0-.708l6-6a.5.5 0 0 1 .708 0z'/%3e%3c/svg%3e\");
-                }");
+                }",
+                ".foo[data-v-example] {
+                    background-image: url(\"data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23fff'%3e%3cpath d='M11.354 1.646a.5.5 0 0 1 0 .708L5.707 8l5.647 5.646a.5.5 0 0 1-.708.708l-6-6a.5.5 0 0 1 0-.708l6-6a.5.5 0 0 1 .708 0z'/%3e%3c/svg%3e\");
+                }",
+            );
         }
 
         #[test]
@@ -777,9 +830,27 @@ mod tests {
                         transform: none;
                     }
                 }",
+                "@keyframes spinner-grow {
+                    0% {
+                        transform: scale(0);
+                    }
+                    50% {
+                        opacity: 1;
+                        transform: none;
+                    }
+                }",
             );
 
             parse_style(
+                "@-webkit-keyframes spinner-grow {
+                    0% {
+                        transform: scale(0);
+                    }
+                    50% {
+                        opacity: 1;
+                        transform: none;
+                    }
+                }",
                 "@-webkit-keyframes spinner-grow {
                     0% {
                         transform: scale(0);

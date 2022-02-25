@@ -79,7 +79,8 @@ impl Plugin {
         id: &str,
         resp: &mut Vec<char>,
     ) -> Result<(), ParserError> {
-        let parsed_code = Parser::new_and_parse(code)?;
+        let id_hash = &simple_hash_crypto_unsafe(id);
+        let parsed_code = Parser::new_and_parse(code, id_hash)?;
 
         let script = parsed_code.script.as_ref();
         let template = parsed_code.template.as_ref();
@@ -138,7 +139,7 @@ impl Plugin {
 
         // Write the _scopeId to the result
         write_str("\n__vue_2_file_default_export__._scopeId = 'data-v-", resp);
-        write_str(&simple_hash_crypto_unsafe(id), resp);
+        write_str(id_hash, resp);
         resp.push('\'');
 
         write_str("\nexport default __vue_2_file_default_export__;", resp);

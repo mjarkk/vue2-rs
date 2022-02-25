@@ -10,6 +10,27 @@ https://vue-loader.vuejs.org/guide/scoped-css.html#child-component-root-elements
 
 */
 
+pub fn gen_scoped_css(
+    p: &mut Parser,
+    style_location: &SourceLocation,
+    injection_points: Vec<usize>,
+    id: &str,
+) -> String {
+    let mut resp = String::new();
+
+    let mut last = style_location.0;
+    for point in injection_points {
+        SourceLocation(last, point).write_to_string(p, &mut resp);
+        last = point;
+        resp.push_str("[data-v-");
+        resp.push_str(id);
+        resp.push(']');
+    }
+    SourceLocation(last, style_location.1).write_to_string(p, &mut resp);
+
+    resp
+}
+
 #[derive(PartialEq)]
 pub enum SelectorsEnd {
     StyleClosure,
@@ -240,6 +261,7 @@ fn parse_selector(
     loop {
         let mut handle_pseudo_classes_next = false;
 
+        let mut has_any_chars = false;
         loop {
             match p.must_read_one()? {
                 '/' if p.seek_one_or_null() == '*' => {
@@ -252,21 +274,30 @@ fn parse_selector(
                 }
                 ':' => {
                     // This is the start of a pseudo-classes selector
-                    basic_selector_ends.push(p.current_char - 1);
+                    if has_any_chars {
+                        basic_selector_ends.push(p.current_char - 1);
+                    }
                     handle_pseudo_classes_next = true;
                     break;
                 }
                 '{' => {
                     // This is a tag opener
-                    basic_selector_ends.push(p.current_char - 1);
+                    if has_any_chars {
+                        basic_selector_ends.push(p.current_char - 1);
+                    }
                     return Ok(ParseSelectorDoNext::Content);
                 }
                 c if is_combinator(c) => {
+                    if has_any_chars {
+                        basic_selector_ends.push(p.current_char - 1);
+                    }
                     parse_combinator(p)?;
                     break;
                 }
                 c if end.matches(p, c) => return Ok(ParseSelectorDoNext::Closure),
-                _ => {}
+                _ => {
+                    has_any_chars = true;
+                }
             };
         }
 
@@ -311,7 +342,7 @@ fn is_style_close_tag(p: &mut Parser) -> bool {
 fn is_combinator(c: char) -> bool {
     match c {
         c if utils::is_space(c) => true,
-        '*' | '>' | '+' | '~' => true,
+        ',' | '*' | '>' | '+' | '~' => true,
         _ => false,
     }
 }
