@@ -163,7 +163,7 @@ impl Parser {
                             let (content_location, scoped_selector_injection_points) = match (scoped, lang.as_ref().map(|v| v.as_str())) {
                                 (true, None) | (true, Some("css")) => {
                                     let start = self.current_char;
-                                    let injection_points = style::parse_scoped_css(self)?;
+                                    let injection_points = style::parse_scoped_css(self, style::SelectorsEnd::StyleClosure)?;
                                     (SourceLocation(start, self.current_char-8), Some(injection_points))
                                 }
                                 _ => (SourceLocation(self.current_char, self.look_for("</style>".chars().collect())?.0), None),

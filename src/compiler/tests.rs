@@ -680,8 +680,8 @@ mod tests {
         use super::*;
 
         fn parse_style(style: &str) {
-            let mut parser = Parser::new(&format!("{}</style>", style));
-            style::parse_scoped_css(&mut parser).unwrap();
+            let mut parser = Parser::new(style);
+            style::parse_scoped_css(&mut parser, style::SelectorsEnd::EOF).unwrap();
         }
 
         #[test]
@@ -728,6 +728,62 @@ mod tests {
                 "banana + peer[with_arg] {}\n",
                 "peer:hover, peer:focus {}\n",
             ]);
+        }
+
+        #[test]
+        fn comment() {
+            parse_style("/* foo { */ foo {}");
+        }
+
+        #[test]
+        fn special() {
+            parse_style("@charset \"UTF-8\";");
+            parse_style("@namespace svg \"http://www.w3.org/2000/svg\";");
+            parse_style("@import 'http://example.com/style.css';");
+        }
+
+        #[test]
+        fn media() {
+            parse_style(
+                "@media(min-width: 1200px) {
+                    h1, .h1 {font-size: 2.5rem;}
+                }",
+            );
+        }
+
+        #[test]
+        fn string() {
+            parse_style(
+                ".foo {
+                    background-image: url(\"data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23fff'%3e%3cpath d='M11.354 1.646a.5.5 0 0 1 0 .708L5.707 8l5.647 5.646a.5.5 0 0 1-.708.708l-6-6a.5.5 0 0 1 0-.708l6-6a.5.5 0 0 1 .708 0z'/%3e%3c/svg%3e\");
+                }");
+        }
+
+        #[test]
+        fn key_frames() {
+            parse_style(
+                "@keyframes spinner-grow {
+                    0% {
+                        transform: scale(0);
+                    }
+                    50% {
+                        opacity: 1;
+                        transform: none;
+                    }
+                }",
+            );
+
+            parse_style(
+                "@-webkit-keyframes spinner-grow {
+                    0% {
+                        transform: scale(0);
+                    }
+                    50% {
+                        opacity: 1;
+                        transform: none;
+                    }
+                }",
+            );
         }
     }
 }
