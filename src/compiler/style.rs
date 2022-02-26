@@ -4,7 +4,7 @@ use super::{utils, Parser, ParserError, QuoteKind, SourceLocation};
     TODO: Support :NOT(.foo,.bar)
 */
 
-enum InjectionPoint {
+pub enum InjectionPoint {
     Data(usize),
     Deep(usize, usize),
 }
@@ -12,18 +12,26 @@ enum InjectionPoint {
 pub fn gen_scoped_css(
     p: &mut Parser,
     style_location: SourceLocation,
-    injection_points: Vec<usize>,
+    injection_points: Vec<InjectionPoint>,
     id: &str,
 ) -> String {
     let mut resp = String::new();
 
     let mut last = style_location.0;
-    for point in injection_points {
-        SourceLocation(last, point).write_to_string(p, &mut resp);
-        last = point;
-        resp.push_str("[data-v-");
-        resp.push_str(id);
-        resp.push(']');
+    for inject_point in injection_points {
+        match inject_point {
+            InjectionPoint::Data(point) => {
+                SourceLocation(last, point).write_to_string(p, &mut resp);
+                last = point;
+                resp.push_str("[data-v-");
+                resp.push_str(id);
+                resp.push(']');
+            }
+            InjectionPoint::Deep(from, to) => {
+                SourceLocation(last, from).write_to_string(p, &mut resp);
+                last = to;
+            }
+        }
     }
     SourceLocation(last, style_location.1).write_to_string(p, &mut resp);
 
@@ -53,7 +61,10 @@ impl SelectorsEnd {
     }
 }
 
-pub fn parse_scoped_css(p: &mut Parser, end: SelectorsEnd) -> Result<Vec<usize>, ParserError> {
+pub fn parse_scoped_css(
+    p: &mut Parser,
+    end: SelectorsEnd,
+) -> Result<Vec<InjectionPoint>, ParserError> {
     /*
     basic_selector_ends contains all the css selector location ends before any pseudo-classes
     This is for example:
@@ -70,7 +81,7 @@ pub fn parse_scoped_css(p: &mut Parser, end: SelectorsEnd) -> Result<Vec<usize>,
        ^
     */
 
-    let mut basic_selector_ends: Vec<usize> = Vec::new();
+    let mut basic_selector_ends: Vec<InjectionPoint> = Vec::new();
     let parsing_result = parse_selectors(p, &mut basic_selector_ends, &end);
     if let Err(e) = parsing_result {
         if SelectorsEnd::EOF != end || !e.is_eof() {
@@ -82,7 +93,7 @@ pub fn parse_scoped_css(p: &mut Parser, end: SelectorsEnd) -> Result<Vec<usize>,
 
 pub fn parse_selectors(
     p: &mut Parser,
-    basic_selector_ends: &mut Vec<usize>,
+    basic_selector_ends: &mut Vec<InjectionPoint>,
     end: &SelectorsEnd,
 ) -> Result<(), ParserError> {
     loop {
@@ -124,7 +135,7 @@ enum ParseSelectorDoNext {
 */
 fn parse_at(
     p: &mut Parser,
-    basic_selector_ends: &mut Vec<usize>,
+    basic_selector_ends: &mut Vec<InjectionPoint>,
     end: &SelectorsEnd,
 ) -> Result<ParseSelectorDoNext, ParserError> {
     let mut parse_args_next = false;
@@ -251,7 +262,7 @@ fn parse_selector_content(p: &mut Parser) -> Result<(), ParserError> {
 
 fn parse_selector(
     p: &mut Parser,
-    basic_selector_ends: &mut Vec<usize>,
+    injection_points: &mut Vec<InjectionPoint>,
     end: &SelectorsEnd,
 ) -> Result<ParseSelectorDoNext, ParserError> {
     // the top level loop loops over the selector components:
@@ -275,7 +286,7 @@ fn parse_selector(
                 ':' => {
                     // This is the start of a pseudo-classes selector
                     if has_any_chars && !is_deep {
-                        basic_selector_ends.push(p.current_char - 1);
+                        injection_points.push(InjectionPoint::Data(p.current_char - 1));
                     }
                     handle_pseudo_classes_next = true;
                     break;
@@ -283,15 +294,15 @@ fn parse_selector(
                 '{' => {
                     // This is a tag opener
                     if has_any_chars && !is_deep {
-                        basic_selector_ends.push(p.current_char - 1);
+                        injection_points.push(InjectionPoint::Data(p.current_char - 1));
                     }
                     return Ok(ParseSelectorDoNext::Content);
                 }
                 c if is_combinator(c) => {
                     if has_any_chars && !is_deep {
-                        basic_selector_ends.push(p.current_char - 1);
+                        injection_points.push(InjectionPoint::Data(p.current_char - 1));
                     }
-                    let set_is_deep = parse_combinator(p)?;
+                    let set_is_deep = parse_combinator(p, c, injection_points)?;
                     if set_is_deep {
                         is_deep = true;
                     }
@@ -299,7 +310,8 @@ fn parse_selector(
                 }
                 c if end.matches(p, c) => return Ok(ParseSelectorDoNext::Closure),
                 c => {
-                    if is_vue_deep(p, c) {
+                    if let Some(injection_point) = is_vue_deep(p, c) {
+                        injection_points.push(injection_point);
                         is_deep = true;
                     } else {
                         has_any_chars = true;
@@ -321,7 +333,7 @@ fn parse_selector(
                         return Ok(ParseSelectorDoNext::Content);
                     }
                     c if is_combinator(c) => {
-                        let set_is_deep = parse_combinator(p)?;
+                        let set_is_deep = parse_combinator(p, c, injection_points)?;
                         if set_is_deep {
                             is_deep = true;
                         }
@@ -329,7 +341,8 @@ fn parse_selector(
                     }
                     c if end.matches(p, c) => return Ok(ParseSelectorDoNext::Closure),
                     c => {
-                        if is_vue_deep(p, c) {
+                        if let Some(injection_point) = is_vue_deep(p, c) {
+                            injection_points.push(injection_point);
                             is_deep = true;
                         }
                     }
@@ -411,12 +424,13 @@ fn is_vue_deep_slashes(p: &mut Parser) -> bool {
     true
 }
 
-fn is_vue_deep(p: &mut Parser, c: char) -> bool {
+fn is_vue_deep(p: &mut Parser, c: char) -> Option<InjectionPoint> {
+    let start = p.current_char;
     match c {
-        '>' if is_vue_deep_arrows_right(p) => true,
-        ':' if is_vue_deep_pseudo_class(p) => true,
-        '/' if is_vue_deep_slashes(p) => true,
-        _ => false,
+        '>' if is_vue_deep_arrows_right(p) => Some(InjectionPoint::Deep(start - 1, p.current_char)),
+        ':' if is_vue_deep_pseudo_class(p) => Some(InjectionPoint::Deep(start - 1, p.current_char)),
+        '/' if is_vue_deep_slashes(p) => Some(InjectionPoint::Deep(start - 1, p.current_char)),
+        _ => None,
     }
 }
 
@@ -442,11 +456,22 @@ fn is_combinator(c: char) -> bool {
     }
 }
 
-fn parse_combinator(p: &mut Parser) -> Result<bool, ParserError> {
-    let mut is_deep = false;
+fn parse_combinator(
+    p: &mut Parser,
+    c: char,
+    injection_points: &mut Vec<InjectionPoint>,
+) -> Result<bool, ParserError> {
+    let mut is_deep = if let Some(injection_point) = is_vue_deep(p, c) {
+        injection_points.push(injection_point);
+        true
+    } else {
+        false
+    };
+
     loop {
         let c = p.must_read_one()?;
-        if is_vue_deep(p, c) {
+        if let Some(injection_point) = is_vue_deep(p, c) {
+            injection_points.push(injection_point);
             is_deep = true;
         } else if !is_combinator(c) {
             p.current_char -= 1;

@@ -876,7 +876,7 @@ mod tests {
 
         #[test]
         fn vue_deep_selector() {
-            let kinds = vec![">>>", "::v-deep", "/deep/"];
+            let kinds = vec![">>>", "/deep/"];
             for kind in kinds {
                 parse_style(
                     &format!("foo {} bar {}", kind, "{}"),
@@ -888,6 +888,9 @@ mod tests {
                     "foo[data-v-example]  bar baz {}",
                 );
             }
+
+            parse_style("foo::v-deep bar {}", "foo[data-v-example]  bar {}");
+            parse_style("foo::v-deep bar baz {}", "foo[data-v-example]  bar baz {}");
         }
     }
 }
