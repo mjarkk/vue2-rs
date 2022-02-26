@@ -22,6 +22,18 @@ mod tests {
             v => panic!("{:?}", v),
         }
     }
+    fn unwrap_scoped_css(styles: &Vec<Style>, idx: usize) -> &str {
+        match styles.get(idx).unwrap() {
+            Style::DirectScopedCSS(style) => style.as_str(),
+            v => panic!("{:?}", v),
+        }
+    }
+    fn unwrap_normal_css(styles: &Vec<Style>, idx: usize) -> NormalStyle {
+        match styles.get(idx).unwrap() {
+            Style::Normal(style) => style.clone(),
+            v => panic!("{:?}", v),
+        }
+    }
 
     #[test]
     fn empty_template() {
@@ -77,7 +89,7 @@ mod tests {
         assert!(result.script.is_none());
         assert_eq!(result.styles.len(), 1);
         assert_eq!(
-            result.styles.get(0).unwrap().content.string(&result),
+            unwrap_normal_css(&result.styles, 0).content.string(&result),
             "a {color: red;}"
         );
     }
@@ -118,17 +130,15 @@ mod tests {
             "export default"
         );
 
-        let style_1 = result.styles.get(0).unwrap();
-        assert_eq!(style_1.content.string(&result), "h1 {color: red;}");
-        assert!(style_1.lang.is_none());
-        assert!(style_1.scoped);
+        let style_1 = unwrap_scoped_css(&result.styles, 0);
+        assert_eq!(style_1, "h1[data-v-example] {color: red;}");
 
-        let style_2 = result.styles.get(1).unwrap();
+        let style_2 = unwrap_normal_css(&result.styles, 1);
         assert_eq!(style_2.content.string(&result), "h2 {color: red;}");
         assert_eq!(style_2.lang.clone().unwrap(), "scss");
         assert!(!style_2.scoped);
 
-        let style_3 = result.styles.get(2).unwrap();
+        let style_3 = unwrap_normal_css(&result.styles, 2);
         assert_eq!(style_3.content.string(&result), "h3 {color: blue;}");
         assert_eq!(style_3.lang.clone().unwrap(), "stylus");
         assert!(style_3.scoped);
@@ -701,7 +711,7 @@ mod tests {
 
             let scoped_css = style::gen_scoped_css(
                 &mut parser,
-                &SourceLocation(0, css.len()),
+                SourceLocation(0, css.len()),
                 injection_points,
                 "example",
             );
@@ -718,6 +728,7 @@ mod tests {
         fn basic_selector() {
             parse_style("foo {}", "foo[data-v-example] {}");
             parse_style("foo{}", "foo[data-v-example]{}");
+            parse_style("* {}", "*[data-v-example] {}")
         }
 
         #[test]
@@ -861,6 +872,22 @@ mod tests {
                     }
                 }",
             );
+        }
+
+        #[test]
+        fn vue_deep_selector() {
+            let kinds = vec![">>>", "::v-deep", "/deep/"];
+            for kind in kinds {
+                parse_style(
+                    &format!("foo {} bar {}", kind, "{}"),
+                    "foo[data-v-example]  bar {}",
+                );
+                parse_style(&format!("{} bar {}", kind, "{}"), " bar {}");
+                parse_style(
+                    &format!("foo {} bar baz {}", kind, "{}"),
+                    "foo[data-v-example]  bar baz {}",
+                );
+            }
         }
     }
 }

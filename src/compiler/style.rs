@@ -281,6 +281,7 @@ fn parse_selector(
                     }
                     return Ok(ParseSelectorDoNext::Content);
                 }
+                c if is_vue_deep(p, c) => {}
                 c if is_combinator(c) => {
                     if has_any_chars {
                         basic_selector_ends.push(p.current_char - 1);
@@ -319,6 +320,33 @@ fn parse_selector(
     }
 }
 
+// checks if the following characters are ">>" of a vue css deep statement (">>>")
+fn is_vue_deep_arrows_right(p: &mut Parser) -> bool {
+    if p.seek_one_or_null() != '>' {
+        return false;
+    }
+
+    let start = p.current_char;
+    if p.read_one().is_some() {
+        if let Some(c) = p.read_one() {
+            if c == '>' {
+                return true;
+            }
+        }
+    }
+    p.current_char = start;
+    false
+}
+
+fn is_vue_deep(p: &mut Parser, c: char) -> bool {
+    match c {
+        '>' if is_vue_deep_arrows_right(p) => true,
+        ':' => true,
+        '/' => true,
+        _ => false,
+    }
+}
+
 fn is_style_close_tag(p: &mut Parser) -> bool {
     let start = p.current_char;
     for closure_char in "/style>".chars() {
@@ -341,7 +369,6 @@ fn is_combinator(c: char) -> bool {
     }
 }
 
-// https://www.w3.org/TR/selectors-3/#combinators
 fn parse_combinator(p: &mut Parser) -> Result<(), ParserError> {
     loop {
         if !is_combinator(p.must_seek_one()?) {
