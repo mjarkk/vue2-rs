@@ -252,6 +252,7 @@ fn parse_selector(
     // the top level loop loops over the selector components:
     // foo  bar
     // ^^^  ^^^ - these are 2 components
+    let mut is_deep = false;
     loop {
         let mut handle_pseudo_classes_next = false;
 
@@ -268,7 +269,7 @@ fn parse_selector(
                 }
                 ':' => {
                     // This is the start of a pseudo-classes selector
-                    if has_any_chars {
+                    if has_any_chars && !is_deep {
                         basic_selector_ends.push(p.current_char - 1);
                     }
                     handle_pseudo_classes_next = true;
@@ -276,22 +277,28 @@ fn parse_selector(
                 }
                 '{' => {
                     // This is a tag opener
-                    if has_any_chars {
+                    if has_any_chars && !is_deep {
                         basic_selector_ends.push(p.current_char - 1);
                     }
                     return Ok(ParseSelectorDoNext::Content);
                 }
-                c if is_vue_deep(p, c) => {}
                 c if is_combinator(c) => {
-                    if has_any_chars {
+                    if has_any_chars && !is_deep {
                         basic_selector_ends.push(p.current_char - 1);
                     }
-                    parse_combinator(p)?;
+                    let set_is_deep = parse_combinator(p)?;
+                    if set_is_deep {
+                        is_deep = true;
+                    }
                     break;
                 }
                 c if end.matches(p, c) => return Ok(ParseSelectorDoNext::Closure),
-                _ => {
-                    has_any_chars = true;
+                c => {
+                    if is_vue_deep(p, c) {
+                        is_deep = true;
+                    } else {
+                        has_any_chars = true;
+                    }
                 }
             };
         }
@@ -309,11 +316,18 @@ fn parse_selector(
                         return Ok(ParseSelectorDoNext::Content);
                     }
                     c if is_combinator(c) => {
-                        parse_combinator(p)?;
+                        let set_is_deep = parse_combinator(p)?;
+                        if set_is_deep {
+                            is_deep = true;
+                        }
                         break;
                     }
                     c if end.matches(p, c) => return Ok(ParseSelectorDoNext::Closure),
-                    _ => {}
+                    c => {
+                        if is_vue_deep(p, c) {
+                            is_deep = true;
+                        }
+                    }
                 }
             }
         }
@@ -321,6 +335,7 @@ fn parse_selector(
 }
 
 // checks if the following characters are ">>" of a vue css deep statement (">>>")
+// TODO support comments inside this (>>/* comment*/>)
 fn is_vue_deep_arrows_right(p: &mut Parser) -> bool {
     if p.seek_one_or_null() != '>' {
         return false;
@@ -338,11 +353,64 @@ fn is_vue_deep_arrows_right(p: &mut Parser) -> bool {
     false
 }
 
+// check if the following characters are ":v-deep" of a vue css deep statement ("::v-deep")
+// TODO support comments inside this (::v-/* comment*/deep)
+fn is_vue_deep_pseudo_class(p: &mut Parser) -> bool {
+    if p.seek_one_or_null() != ':' {
+        return false;
+    }
+
+    let start = p.current_char;
+    p.current_char += 1;
+
+    for v_deep_char in "v-deep".chars() {
+        match p.read_one() {
+            Some(c) if c == v_deep_char => {}
+            _ => {
+                p.current_char = start;
+                return false;
+            }
+        }
+    }
+
+    match p.seek_one_or_null() {
+        '/' => true, // is a comment next
+        '{' => true, // is a selector content
+        ':' => true, // is another pseudo class next
+        '[' => true, // this is a arg selector (should not be here but lets just support it :))
+        c if is_combinator(c) => true,
+        _ => false,
+    }
+}
+
+// check if the following characters are "deep/" of a vue css deep statement ("/deep/")
+// TODO support comments inside this (::/de/* comment*/ep/)
+fn is_vue_deep_slashes(p: &mut Parser) -> bool {
+    if p.seek_one_or_null() != 'd' {
+        return false;
+    }
+
+    let start = p.current_char;
+    p.current_char += 1;
+
+    for v_deep_char in "eep/".chars() {
+        match p.read_one() {
+            Some(c) if c == v_deep_char => {}
+            _ => {
+                p.current_char = start;
+                return false;
+            }
+        }
+    }
+
+    true
+}
+
 fn is_vue_deep(p: &mut Parser, c: char) -> bool {
     match c {
         '>' if is_vue_deep_arrows_right(p) => true,
-        ':' => true,
-        '/' => true,
+        ':' if is_vue_deep_pseudo_class(p) => true,
+        '/' if is_vue_deep_slashes(p) => true,
         _ => false,
     }
 }
@@ -369,12 +437,16 @@ fn is_combinator(c: char) -> bool {
     }
 }
 
-fn parse_combinator(p: &mut Parser) -> Result<(), ParserError> {
+fn parse_combinator(p: &mut Parser) -> Result<bool, ParserError> {
+    let mut is_deep = false;
     loop {
-        if !is_combinator(p.must_seek_one()?) {
-            return Ok(());
+        let c = p.must_read_one()?;
+        if is_vue_deep(p, c) {
+            is_deep = true;
+        } else if !is_combinator(c) {
+            p.current_char -= 1;
+            return Ok(is_deep);
         }
-        p.current_char += 1;
     }
 }
 
