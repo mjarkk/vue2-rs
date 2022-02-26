@@ -13,9 +13,14 @@ use wasm_bindgen::prelude::*;
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
+struct ComponentCache {
+    logic: Option<String>,
+    styles: Vec<String>,
+}
+
 #[wasm_bindgen]
 pub struct Plugin {
-    styles_cache: HashMap<String, Vec<String>>,
+    components_cache: HashMap<String, ComponentCache>,
 }
 
 #[wasm_bindgen]
@@ -24,7 +29,7 @@ impl Plugin {
     pub fn new() -> Self {
         utils::set_panic_hook();
         Self {
-            styles_cache: HashMap::new(),
+            components_cache: HashMap::new(),
         }
     }
 
@@ -39,15 +44,20 @@ impl Plugin {
             ParsedId::Other => None,
             ParsedId::Main => None,
             ParsedId::Style(style) => {
-                if let Some(styles) = self.styles_cache.get(style.id) {
-                    if let Some(style) = styles.get(style.index as usize) {
-                        Some(style.clone())
-                    } else {
-                        Some(String::new())
+                if let Some(component) = self.components_cache.get(style.id) {
+                    if let Some(style) = component.styles.get(style.index as usize) {
+                        return Some(style.clone());
                     }
-                } else {
-                    Some(String::new())
                 }
+                Some(String::new())
+            }
+            ParsedId::Logic(id) => {
+                if let Some(component) = self.components_cache.get(id) {
+                    if let Some(logic) = &component.logic {
+                        return Some(logic.clone());
+                    }
+                }
+                Some(String::new())
             }
         }
     }
@@ -79,6 +89,7 @@ impl Plugin {
                     None
                 }
             }
+            ParsedId::Logic(_) => None,
         }
     }
 
@@ -95,9 +106,12 @@ impl Plugin {
         let template = parsed_code.template.as_ref();
         let styles = &parsed_code.styles;
 
-        if styles.len() != 0 {
-            let mut cache = Vec::with_capacity(styles.len());
+        let mut cache_entry = ComponentCache {
+            logic: None,
+            styles: Vec::new(),
+        };
 
+        if styles.len() != 0 {
             for (index, style_kind) in styles.iter().enumerate() {
                 // Writes:
                 // id.vue?vue&type=style&index=0&lang.css
@@ -110,7 +124,7 @@ impl Plugin {
 
                 match style_kind {
                     Style::Normal(style) => {
-                        cache.push(style.content.string(&parsed_code));
+                        cache_entry.styles.push(style.content.string(&parsed_code));
 
                         if style.scoped {
                             write_str("&scoped=true", resp);
@@ -122,7 +136,7 @@ impl Plugin {
                         write_str(&lang_extension, resp);
                     }
                     Style::DirectScopedCSS(style) => {
-                        cache.push(style.clone());
+                        cache_entry.styles.push(style.clone());
 
                         write_str("&pre-scoped=true", resp);
                         write_str("&lang.css", resp);
@@ -131,8 +145,6 @@ impl Plugin {
 
                 write_str("';\n", resp);
             }
-
-            self.styles_cache.insert(id.to_string(), cache);
         }
 
         if script.is_none() && template.is_none() {
@@ -141,18 +153,19 @@ impl Plugin {
         }
 
         if let Some(script) = script {
-            if let Some(default_export_location) = script.default_export_location.as_ref() {
-                SourceLocation(script.content.0, default_export_location.0)
-                    .write_to_vec(&parsed_code, resp);
+            cache_entry.logic = Some(script.content.string(&parsed_code));
 
-                write_str("\nconst __vue_2_file_default_export__ =", resp);
-
-                SourceLocation(default_export_location.1, script.content.1)
-                    .write_to_vec(&parsed_code, resp);
-            } else {
-                script.content.write_to_vec(&parsed_code, resp);
-                write_str("\nconst __vue_2_file_default_export__ = {}", resp);
-            }
+            // Writes:
+            // id.vue?vue&type=logic&lang.js
+            write_str("\nimport * as logic from '", resp);
+            write_str_escaped(id, '\'', '\\', resp);
+            let lang_extension = script.lang.as_ref().map(|v| v.as_str()).unwrap_or("js");
+            write_str("?vue&type=logic&lang.", resp);
+            write_str(lang_extension, resp);
+            write_str(
+                "';\nconst __vue_2_file_default_export__ = logic.default || {};",
+                resp,
+            );
         } else {
             write_str("\nconst __vue_2_file_default_export__ = {};", resp);
         }
@@ -166,6 +179,8 @@ impl Plugin {
         resp.push('\'');
 
         write_str("\nexport default __vue_2_file_default_export__;", resp);
+
+        self.components_cache.insert(id.to_string(), cache_entry);
 
         Ok(())
     }
@@ -194,6 +209,7 @@ enum ParsedId<'a> {
     Other,                  // Not a vue file
     Main,                   // The global vue file
     Style(TargetStyle<'a>), // Targets a style within a vue file
+    Logic(&'a str),         // Targets a script tag within a vue file
 }
 
 struct TargetStyle<'a> {
@@ -221,6 +237,7 @@ impl<'a> ParsedId<'a> {
                         "type" => {
                             import_type = match value {
                                 "style" => ImportType::Style,
+                                "logic" => ImportType::Logic,
                                 _ => ImportType::Main,
                             };
                         }
@@ -244,6 +261,7 @@ impl<'a> ParsedId<'a> {
                     index,
                     scoped,
                 }),
+                ImportType::Logic => ParsedId::Logic(first),
             }
         } else if id.ends_with(".vue") {
             Self::Main
@@ -256,4 +274,5 @@ impl<'a> ParsedId<'a> {
 enum ImportType {
     Main,
     Style,
+    Logic,
 }

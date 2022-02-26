@@ -49,7 +49,7 @@ This is a project that is in progress
 - Script
   - [x] Basic start and end detection (`<script>..</script>`)
   - [x] Inject JS render function from template
-  - [ ] Support other script languages (typescript)
+  - [x] Support other script languages (typescript)
   - [ ] Source maps
   - [x] Inject styles
     - [x] Global
