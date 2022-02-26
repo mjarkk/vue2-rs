@@ -288,6 +288,10 @@ fn parse_selector(
                     if has_any_chars && !is_deep {
                         injection_points.push(InjectionPoint::Data(p.current_char - 1));
                     }
+                    if let Some(injection_point) = is_vue_deep_pseudo_class(p) {
+                        injection_points.push(injection_point);
+                        is_deep = true;
+                    }
                     handle_pseudo_classes_next = true;
                     break;
                 }
@@ -373,9 +377,11 @@ fn is_vue_deep_arrows_right(p: &mut Parser) -> bool {
 
 // check if the following characters are ":v-deep" of a vue css deep statement ("::v-deep")
 // TODO support comments inside this (::v-/* comment*/deep)
-fn is_vue_deep_pseudo_class(p: &mut Parser) -> bool {
+fn is_vue_deep_pseudo_class(p: &mut Parser) -> Option<InjectionPoint> {
+    let start = p.current_char;
+
     if p.seek_one_or_null() != ':' {
-        return false;
+        return None;
     }
 
     let start = p.current_char;
@@ -386,18 +392,19 @@ fn is_vue_deep_pseudo_class(p: &mut Parser) -> bool {
             Some(c) if c == v_deep_char => {}
             _ => {
                 p.current_char = start;
-                return false;
+                return None;
             }
         }
     }
 
+    let ok_result: Option<InjectionPoint> = Some(InjectionPoint::Deep(start - 1, p.current_char));
     match p.seek_one_or_null() {
-        '/' => true, // is a comment next
-        '{' => true, // is a selector content
-        ':' => true, // is another pseudo class next
-        '[' => true, // this is a arg selector (should not be here but lets just support it :))
-        c if is_combinator(c) => true,
-        _ => false,
+        '/' => ok_result, // is a comment next
+        '{' => ok_result, // is a selector content
+        ':' => ok_result, // is another pseudo class next
+        '[' => ok_result, // this is a arg selector (should not be here but lets just support it :))
+        c if is_combinator(c) => ok_result,
+        _ => None,
     }
 }
 
@@ -428,8 +435,8 @@ fn is_vue_deep(p: &mut Parser, c: char) -> Option<InjectionPoint> {
     let start = p.current_char;
     match c {
         '>' if is_vue_deep_arrows_right(p) => Some(InjectionPoint::Deep(start - 1, p.current_char)),
-        ':' if is_vue_deep_pseudo_class(p) => Some(InjectionPoint::Deep(start - 1, p.current_char)),
         '/' if is_vue_deep_slashes(p) => Some(InjectionPoint::Deep(start - 1, p.current_char)),
+        ':' => is_vue_deep_pseudo_class(p),
         _ => None,
     }
 }

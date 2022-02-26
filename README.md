@@ -59,8 +59,8 @@ This is a project that is in progress
   - [x] Style parsing
   - [ ] Source maps
   - [x] Global
-  - [ ] [Scoped](https://vue-loader.vuejs.org/guide/scoped-css.html#scoped-css)
-    - [ ] [Deep selectors](https://vue-loader.vuejs.org/guide/scoped-css.html#mixing-local-and-global-styles)
+  - [x] [Scoped](https://vue-loader.vuejs.org/guide/scoped-css.html#scoped-css)
+    - [x] [Deep selectors](https://vue-loader.vuejs.org/guide/scoped-css.html#mixing-local-and-global-styles)
 - Vite stuff
   - [x] Compiling of Vue components
   - [ ] Component error handling

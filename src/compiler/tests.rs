@@ -889,8 +889,8 @@ mod tests {
                 );
             }
 
-            parse_style("foo::v-deep bar {}", "foo[data-v-example]  bar {}");
-            parse_style("foo::v-deep bar baz {}", "foo[data-v-example]  bar baz {}");
+            parse_style("foo::v-deep bar {}", "foo[data-v-example] bar {}");
+            parse_style("foo::v-deep bar baz {}", "foo[data-v-example] bar baz {}");
         }
     }
 }
