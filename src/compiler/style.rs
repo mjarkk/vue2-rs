@@ -6,7 +6,7 @@ use super::{utils, Parser, ParserError, QuoteKind, SourceLocation};
 
 pub enum InjectionPoint {
     Data(usize),
-    Deep(usize, usize),
+    Remove(usize, usize),
 }
 
 pub fn gen_scoped_css(
@@ -27,7 +27,7 @@ pub fn gen_scoped_css(
                 resp.push_str(id);
                 resp.push(']');
             }
-            InjectionPoint::Deep(from, to) => {
+            InjectionPoint::Remove(from, to) => {
                 SourceLocation(last, from).write_to_string(p, &mut resp);
                 last = to;
             }
@@ -66,7 +66,7 @@ pub fn parse_scoped_css(
     end: SelectorsEnd,
 ) -> Result<Vec<InjectionPoint>, ParserError> {
     /*
-    basic_selector_ends contains all the css selector location ends before any pseudo-classes
+    injection_points contains all the css selector location ends before any pseudo-classes
     This is for example:
 
     foo {}
@@ -81,26 +81,26 @@ pub fn parse_scoped_css(
        ^
     */
 
-    let mut basic_selector_ends: Vec<InjectionPoint> = Vec::new();
-    let parsing_result = parse_selectors(p, &mut basic_selector_ends, &end);
+    let mut injection_points: Vec<InjectionPoint> = Vec::new();
+    let parsing_result = parse_selectors(p, &mut injection_points, &end);
     if let Err(e) = parsing_result {
         if SelectorsEnd::EOF != end || !e.is_eof() {
             return Err(e);
         }
     }
-    Ok(basic_selector_ends)
+    Ok(injection_points)
 }
 
 pub fn parse_selectors(
     p: &mut Parser,
-    basic_selector_ends: &mut Vec<InjectionPoint>,
+    injection_points: &mut Vec<InjectionPoint>,
     end: &SelectorsEnd,
 ) -> Result<(), ParserError> {
     loop {
         let c = p.must_read_one_skip_spacing()?;
         match c {
             '@' => {
-                match parse_at(p, basic_selector_ends, end)? {
+                match parse_at(p, injection_points, end)? {
                     ParseSelectorDoNext::Content => {}
                     ParseSelectorDoNext::Closure => break,
                 };
@@ -109,8 +109,8 @@ pub fn parse_selectors(
             _ => {
                 p.current_char -= 1;
 
-                match parse_selector(p, basic_selector_ends, end)? {
-                    ParseSelectorDoNext::Content => parse_selector_content(p)?,
+                match parse_selector(p, injection_points, end)? {
+                    ParseSelectorDoNext::Content => parse_selector_content(p, injection_points)?,
                     ParseSelectorDoNext::Closure => break,
                 }
             }
@@ -135,7 +135,7 @@ enum ParseSelectorDoNext {
 */
 fn parse_at(
     p: &mut Parser,
-    basic_selector_ends: &mut Vec<InjectionPoint>,
+    injection_points: &mut Vec<InjectionPoint>,
     end: &SelectorsEnd,
 ) -> Result<ParseSelectorDoNext, ParserError> {
     let mut parse_args_next = false;
@@ -171,7 +171,7 @@ fn parse_at(
             }
             '/' if p.seek_one_or_null() == '*' => {
                 // This is the start of a comment
-                parse_comment(p)?;
+                injection_points.push(parse_comment(p)?);
             }
             c if end.matches(p, c) => return Ok(ParseSelectorDoNext::Closure),
             _ => {}
@@ -181,7 +181,7 @@ fn parse_at(
 
     if parse_args_next {
         if arg_open {
-            parse_arg(p)?;
+            parse_arg(p, injection_points)?;
         } else if arg_string {
             p.current_char -= 1;
         }
@@ -191,14 +191,14 @@ fn parse_at(
                 '\'' => p.parse_quotes(QuoteKind::JSSingle, &mut None)?,
                 '"' => p.parse_quotes(QuoteKind::JSDouble, &mut None)?,
                 '{' => break,
-                '(' => parse_arg(p)?,
+                '(' => parse_arg(p, injection_points)?,
                 ';' => {
                     // end
                     return Ok(ParseSelectorDoNext::Content);
                 }
                 '/' if p.seek_one_or_null() == '*' => {
                     // This is the start of a comment
-                    parse_comment(p)?;
+                    injection_points.push(parse_comment(p)?);
                 }
                 c if end.matches(p, c) => return Ok(ParseSelectorDoNext::Closure),
                 _ => {}
@@ -221,15 +221,18 @@ fn parse_at(
     };
 
     if is_keyframes {
-        parse_selector_content(p)?;
+        parse_selector_content(p, injection_points)?;
     } else {
-        parse_selectors(p, basic_selector_ends, &SelectorsEnd::ClosingBracket)?;
+        parse_selectors(p, injection_points, &SelectorsEnd::ClosingBracket)?;
     }
 
     Ok(ParseSelectorDoNext::Content)
 }
 
-fn parse_arg(p: &mut Parser) -> Result<(), ParserError> {
+fn parse_arg(
+    p: &mut Parser,
+    injection_points: &mut Vec<InjectionPoint>,
+) -> Result<(), ParserError> {
     loop {
         match p.must_read_one()? {
             '\'' => p.parse_quotes(QuoteKind::JSSingle, &mut None)?,
@@ -237,23 +240,26 @@ fn parse_arg(p: &mut Parser) -> Result<(), ParserError> {
             ')' => return Ok(()),
             '/' if p.seek_one_or_null() == '*' => {
                 // This is the start of a comment
-                parse_comment(p)?;
+                injection_points.push(parse_comment(p)?);
             }
             _ => {}
         }
     }
 }
 
-fn parse_selector_content(p: &mut Parser) -> Result<(), ParserError> {
+fn parse_selector_content(
+    p: &mut Parser,
+    injection_points: &mut Vec<InjectionPoint>,
+) -> Result<(), ParserError> {
     loop {
         match p.must_read_one()? {
             '\'' => p.parse_quotes(QuoteKind::JSSingle, &mut None)?,
             '"' => p.parse_quotes(QuoteKind::JSDouble, &mut None)?,
             '}' => return Ok(()),
-            '{' => parse_selector_content(p)?,
+            '{' => parse_selector_content(p, injection_points)?,
             '/' if p.seek_one_or_null() == '*' => {
                 // This is the start of a comment
-                parse_comment(p)?;
+                injection_points.push(parse_comment(p)?);
             }
             _ => {}
         }
@@ -277,11 +283,11 @@ fn parse_selector(
             match p.must_read_one()? {
                 '/' if p.seek_one_or_null() == '*' => {
                     // This is the start of a comment
-                    parse_comment(p)?;
+                    injection_points.push(parse_comment(p)?);
                 }
                 '[' => {
                     // This is the start of a attribute selector
-                    parse_attribute_selector(p)?;
+                    parse_attribute_selector(p, injection_points)?;
                 }
                 ':' => {
                     // This is the start of a pseudo-classes selector
@@ -330,7 +336,7 @@ fn parse_selector(
                 match p.must_read_one()? {
                     '/' if p.seek_one_or_null() == '*' => {
                         // This is the start of a comment
-                        parse_comment(p)?;
+                        injection_points.push(parse_comment(p)?);
                     }
                     '{' => {
                         // This is a tag opener
@@ -378,8 +384,6 @@ fn is_vue_deep_arrows_right(p: &mut Parser) -> bool {
 // check if the following characters are ":v-deep" of a vue css deep statement ("::v-deep")
 // TODO support comments inside this (::v-/* comment*/deep)
 fn is_vue_deep_pseudo_class(p: &mut Parser) -> Option<InjectionPoint> {
-    let start = p.current_char;
-
     if p.seek_one_or_null() != ':' {
         return None;
     }
@@ -397,7 +401,7 @@ fn is_vue_deep_pseudo_class(p: &mut Parser) -> Option<InjectionPoint> {
         }
     }
 
-    let ok_result: Option<InjectionPoint> = Some(InjectionPoint::Deep(start - 1, p.current_char));
+    let ok_result: Option<InjectionPoint> = Some(InjectionPoint::Remove(start - 1, p.current_char));
     match p.seek_one_or_null() {
         '/' => ok_result, // is a comment next
         '{' => ok_result, // is a selector content
@@ -434,8 +438,10 @@ fn is_vue_deep_slashes(p: &mut Parser) -> bool {
 fn is_vue_deep(p: &mut Parser, c: char) -> Option<InjectionPoint> {
     let start = p.current_char;
     match c {
-        '>' if is_vue_deep_arrows_right(p) => Some(InjectionPoint::Deep(start - 1, p.current_char)),
-        '/' if is_vue_deep_slashes(p) => Some(InjectionPoint::Deep(start - 1, p.current_char)),
+        '>' if is_vue_deep_arrows_right(p) => {
+            Some(InjectionPoint::Remove(start - 1, p.current_char))
+        }
+        '/' if is_vue_deep_slashes(p) => Some(InjectionPoint::Remove(start - 1, p.current_char)),
         ':' => is_vue_deep_pseudo_class(p),
         _ => None,
     }
@@ -490,12 +496,15 @@ fn parse_combinator(
 // parses: [foo] of .foo.bar[foo]
 // expects to the character number to be after the '['
 // https://www.w3.org/TR/selectors-3/#attribute-selectors
-fn parse_attribute_selector(p: &mut Parser) -> Result<(), ParserError> {
+fn parse_attribute_selector(
+    p: &mut Parser,
+    injection_points: &mut Vec<InjectionPoint>,
+) -> Result<(), ParserError> {
     loop {
         match p.must_read_one()? {
             '/' if p.must_seek_one().unwrap_or(0 as char) == '*' => {
                 // This is the start of a comment
-                parse_comment(p)?;
+                injection_points.push(parse_comment(p)?);
             }
             ']' => return Ok(()),
             _ => {}
@@ -504,12 +513,14 @@ fn parse_attribute_selector(p: &mut Parser) -> Result<(), ParserError> {
 }
 
 // parses a css comment: /* this is the comment content */
-fn parse_comment(p: &mut Parser) -> Result<(), ParserError> {
+fn parse_comment(p: &mut Parser) -> Result<InjectionPoint, ParserError> {
+    let start = p.current_char - 1;
+    p.current_char += 1;
     loop {
         if p.must_read_one()? == '*' {
             if p.must_seek_one()? == '/' {
                 p.current_char += 1;
-                return Ok(());
+                return Ok(InjectionPoint::Remove(start, p.current_char));
             }
         }
     }

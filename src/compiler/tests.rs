@@ -789,7 +789,7 @@ mod tests {
 
         #[test]
         fn comment() {
-            parse_style("/* foo { */ foo {}", "/* foo { */ foo[data-v-example] {}");
+            parse_style("/* foo { */ foo {}", " foo[data-v-example] {}");
         }
 
         #[test]
