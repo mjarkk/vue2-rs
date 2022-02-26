@@ -4,6 +4,11 @@ use super::{utils, Parser, ParserError, QuoteKind, SourceLocation};
     TODO: Support :NOT(.foo,.bar)
 */
 
+enum InjectionPoint {
+    Data(usize),
+    Deep(usize, usize),
+}
+
 pub fn gen_scoped_css(
     p: &mut Parser,
     style_location: SourceLocation,
