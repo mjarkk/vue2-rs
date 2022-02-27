@@ -38,7 +38,7 @@ This is a project that is in progress
         - [x] `v-model`
         - [ ] `v-cloak`
         - [x] Custom (`v-custom-directive`)
-    - [ ] Support for `<template>` element
+    - [ ] `<template>` element
       - [ ] Args
         - [x] `v-if`
         - [x] `v-for`
@@ -46,8 +46,10 @@ This is a project that is in progress
         - [ ] `v-slot`
         - [ ] `v-text`
         - [ ] `v-html`
-    - [ ] Support for `<slot>` element
+    - [ ] [`<slot>` element](https://v2.vuejs.org/v2/guide/components-slots.html)
       - [x] Default slot
+      - [ ] Named slots
+      - [ ] Fallback content
       - [ ] Others
 - Script
   - [x] Basic start and end detection (`<script>..</script>`)
