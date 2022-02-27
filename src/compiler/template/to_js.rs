@@ -1,6 +1,6 @@
 use super::super::utils::write_str;
-use super::super::{js, utils, Parser, SourceLocation};
-use super::{arg::VueTagModifier, Child, VueTagArgs};
+use super::super::{utils, Parser, SourceLocation};
+use super::{arg::VueTagModifier, Child, StaticOrJS, VueTagArgs};
 use std::slice::Iter;
 
 /*
@@ -8,7 +8,9 @@ use std::slice::Iter;
 */
 
 const DEFAULT_CONF: &'static str = "
-\n__vue_2_file_default_export__.render = function(c) {
+__vue_2_file_default_export__._compiled = true;
+__vue_2_file_default_export__.staticRenderFns = [];
+__vue_2_file_default_export__.render = function(c) {
     const _vm = this;
     const _h = _vm.$createElement;
     const _c = _vm._self._c || _h;
@@ -105,7 +107,9 @@ pub fn children_to_js(
                 2
             } else {
                 remaining_v_for_magic_number
-            })
+            });
+        } else if artifacts.is_slot {
+            add_magic_number = Some(2);
         } else if artifacts.is_v_for {
             add_magic_number = Some(if children.len() > 1 {
                 2
@@ -115,7 +119,7 @@ pub fn children_to_js(
                 } else {
                     0
                 }
-            })
+            });
         }
     }
 
@@ -158,6 +162,7 @@ pub struct ChildToJsArtifacts {
     pub is_v_for: bool,
     pub move_v_for_magic_number_up: Option<u8>,
     pub is_custom_component: bool,
+    pub is_slot: bool,
 }
 
 pub fn child_to_js(child: &Child, p: &Parser, resp: &mut Vec<char>) -> ChildToJsArtifacts {
@@ -166,6 +171,7 @@ pub fn child_to_js(child: &Child, p: &Parser, resp: &mut Vec<char>) -> ChildToJs
         is_v_for: false,
         move_v_for_magic_number_up: None,
         is_custom_component: false,
+        is_slot: false,
     };
 
     match child {
@@ -204,58 +210,71 @@ pub fn child_to_js(child: &Child, p: &Parser, resp: &mut Vec<char>) -> ChildToJs
 
             let children_len = children.len();
 
-            let is_template = tag.name.eq(p, "template".chars());
-            if is_template {
-                if children_len == 0 {
-                    write_str("void 0", resp);
-                } else {
-                    let result = if children_len == 1 && children.get(0).unwrap().is_v_for() {
-                        children_to_js(children, p, resp)
-                    } else {
-                        resp.push('[');
-                        let result = children_to_js(children, p, resp);
-                        resp.push(']');
-                        result
-                    };
+            let custom_tag_check =
+                tag.name
+                    .eq_some(p, false, vec!["template".chars(), "slot".chars()]);
 
-                    if let Some(magic_number) = result.add_magic_number {
-                        artifacts.move_v_for_magic_number_up = Some(magic_number);
-                        artifacts.is_v_for = true;
+            match custom_tag_check {
+                Some(0) => {
+                    // Is <template>
+                    if children_len == 0 {
+                        write_str("void 0", resp);
+                    } else {
+                        let result = if children_len == 1 && children.get(0).unwrap().is_v_for() {
+                            children_to_js(children, p, resp)
+                        } else {
+                            resp.push('[');
+                            let result = children_to_js(children, p, resp);
+                            resp.push(']');
+                            result
+                        };
+
+                        if let Some(magic_number) = result.add_magic_number {
+                            artifacts.move_v_for_magic_number_up = Some(magic_number);
+                            artifacts.is_v_for = true;
+                        }
                     }
                 }
-            } else {
-                // Writes:
-                // _c('div', [_c(..), _c(..)])
-
-                write_str("_c('", resp);
-                tag.name.write_to_vec_escape(p, resp, '\'', '\\');
-                resp.push('\'');
-                artifacts.is_custom_component = tag.is_custom_component;
-                if tag.args.has_js_component_args {
-                    resp.push(',');
-                    vue_tag_args_to_js(&tag.args, resp, artifacts.is_custom_component);
+                Some(1) => {
+                    artifacts.is_slot = true;
+                    write_str("_vm._t(\"default\")", resp);
                 }
+                _ => {
+                    // Is a normal tag,
+                    //
+                    // Writes:
+                    // _c('div', [_c(..), _c(..)])
 
-                if children_len != 0 {
-                    resp.push(',');
-                    let result = if children_len == 1 && children.get(0).unwrap().is_v_for() {
-                        children_to_js(children, p, resp)
-                    } else {
-                        resp.push('[');
-                        let result = children_to_js(children, p, resp);
-                        resp.push(']');
-                        result
-                    };
-
-                    if let Some(magic_number) = result.add_magic_number {
-                        // When using v-for a magic number is added
-                        // TODO: find out what this magic number exacly is
+                    write_str("_c('", resp);
+                    tag.name.write_to_vec_escape(p, resp, '\'', '\\');
+                    resp.push('\'');
+                    artifacts.is_custom_component = tag.is_custom_component;
+                    if tag.args.has_js_component_args {
                         resp.push(',');
-                        write_str(&magic_number.to_string(), resp);
+                        vue_tag_args_to_js(&tag.args, resp, artifacts.is_custom_component);
                     }
+
+                    if children_len != 0 {
+                        resp.push(',');
+                        let result = if children_len == 1 && children.get(0).unwrap().is_v_for() {
+                            children_to_js(children, p, resp)
+                        } else {
+                            resp.push('[');
+                            let result = children_to_js(children, p, resp);
+                            resp.push(']');
+                            result
+                        };
+
+                        if let Some(magic_number) = result.add_magic_number {
+                            // When using v-for a magic number is added
+                            // TODO: find out what this magic number exacly is
+                            resp.push(',');
+                            write_str(&magic_number.to_string(), resp);
+                        }
+                    }
+                    resp.push(')');
                 }
-                resp.push(')');
-            }
+            };
 
             if artifacts.opened_inline_if_else {
                 resp.push(':');
@@ -317,15 +336,35 @@ pub fn vue_tag_args_to_js(args: &VueTagArgs, dest: &mut Vec<char>, is_custom_com
     let mut object_entries = CommaSeparatedEntries::new();
 
     if let Some(class) = args.class.as_ref() {
-        object_entries.add(dest);
-        write_str("class:", dest);
-        write_str(&class, dest);
+        match class {
+            StaticOrJS::Non => {}
+            StaticOrJS::Static(value) => {
+                object_entries.add(dest);
+                write_str("staticClass:", dest);
+                write_str_with_quotes(value, dest);
+            }
+            StaticOrJS::Bind(value) => {
+                object_entries.add(dest);
+                write_str("class:", dest);
+                write_str(&value, dest);
+            }
+        };
     }
 
     if let Some(style) = args.style.as_ref() {
-        object_entries.add(dest);
-        write_str("style:", dest);
-        write_str(&style, dest);
+        match style {
+            StaticOrJS::Non => {}
+            StaticOrJS::Static(value) => {
+                object_entries.add(dest);
+                write_str("style:", dest);
+                write_str_with_quotes(value, dest);
+            }
+            StaticOrJS::Bind(value) => {
+                object_entries.add(dest);
+                write_str("style:", dest);
+                write_str(&value, dest);
+            }
+        }
     }
 
     if let Some(attrs) = args.attrs_or_props.as_ref() {
@@ -340,13 +379,9 @@ pub fn vue_tag_args_to_js(args: &VueTagArgs, dest: &mut Vec<char>, is_custom_com
         for (key, value) in attrs {
             attrs_entries.add(dest);
 
-            dest.push('"');
-            write_str(&js::escape_quotes(key, '"'), dest);
-            write_str("\":", dest);
-
-            for c in value.chars() {
-                dest.push(c);
-            }
+            write_str_with_quotes(key, dest);
+            dest.push(':');
+            write_static_or_js(value, dest);
         }
 
         dest.push('}');
@@ -360,9 +395,8 @@ pub fn vue_tag_args_to_js(args: &VueTagArgs, dest: &mut Vec<char>, is_custom_com
         for (key, value) in dom_props {
             dom_props_entries.add(dest);
 
-            dest.push('"');
-            write_str(&js::escape_quotes(key, '"'), dest);
-            write_str("\":", dest);
+            write_str_with_quotes(key, dest);
+            dest.push(':');
 
             for c in value.chars() {
                 dest.push(c);
@@ -380,13 +414,9 @@ pub fn vue_tag_args_to_js(args: &VueTagArgs, dest: &mut Vec<char>, is_custom_com
         for (key, value) in on {
             on_entries.add(dest);
 
-            dest.push('"');
-            write_str(&js::escape_quotes(key, '"'), dest);
-            write_str("\":$event=>{", dest);
-
-            for c in value.chars() {
-                dest.push(c);
-            }
+            write_str_with_quotes(key, dest);
+            write_str(":$event=>{", dest);
+            write_str(&value, dest);
 
             dest.push('}');
         }
@@ -402,9 +432,8 @@ pub fn vue_tag_args_to_js(args: &VueTagArgs, dest: &mut Vec<char>, is_custom_com
         for (key, value) in on {
             on_entries.add(dest);
 
-            dest.push('"');
-            write_str(&js::escape_quotes(key, '"'), dest);
-            write_str("\":$event=>{", dest);
+            write_str_with_quotes(key, dest);
+            write_str(":$event=>{", dest);
 
             for c in value.chars() {
                 dest.push(c);
@@ -444,22 +473,19 @@ pub fn vue_tag_args_to_js(args: &VueTagArgs, dest: &mut Vec<char>, is_custom_com
             write_str(",value:", dest);
             write_str(value, dest);
 
-            write_str(",expression:\"", dest);
-            write_str(&js::escape_quotes(&value, '"'), dest);
-            dest.push('"');
+            write_str(",expression:", dest);
+            write_str_with_quotes(&value, dest);
 
             if let Some(target) = name.target.as_ref() {
-                write_str(",arg:\"", dest);
-                write_str(&js::escape_quotes(target, '"'), dest);
-                dest.push('"');
+                write_str(",arg:", dest);
+                write_str_with_quotes(target, dest);
             }
 
             if let Some(modifiers) = name.modifiers.as_ref() {
                 write_str(",modifiers:{", dest);
                 for modifier in modifiers {
-                    dest.push('"');
-                    write_str(&js::escape_quotes(modifier, '"'), dest);
-                    write_str("\":true,", dest);
+                    write_str_with_quotes(modifier, dest);
+                    write_str(":true,", dest);
                 }
                 dest.push('}');
             }
@@ -473,19 +499,19 @@ pub fn vue_tag_args_to_js(args: &VueTagArgs, dest: &mut Vec<char>, is_custom_com
     if let Some(slot) = args.slot.as_ref() {
         object_entries.add(dest);
         write_str("slot:", dest);
-        write_str(&slot, dest);
+        write_static_or_js(slot, dest);
     }
 
     if let Some(key) = args.key.as_ref() {
         object_entries.add(dest);
         write_str("key:", dest);
-        write_str(&key, dest);
+        write_static_or_js(key, dest);
     }
 
     if let Some(ref_) = args.ref_.as_ref() {
         object_entries.add(dest);
         write_str("ref:", dest);
-        write_str(&ref_, dest);
+        write_static_or_js(ref_, dest);
     }
 
     if let Some(ref_in_for) = args.ref_in_for.as_ref() {
@@ -512,5 +538,19 @@ impl CommaSeparatedEntries {
         } else {
             self.0 = true;
         }
+    }
+}
+
+fn write_str_with_quotes(value: &str, dest: &mut Vec<char>) {
+    dest.push('"');
+    utils::write_str_escaped(value, '"', '\\', dest);
+    dest.push('"');
+}
+
+fn write_static_or_js(value: &StaticOrJS, dest: &mut Vec<char>) {
+    match value {
+        StaticOrJS::Non => write_str("true", dest),
+        StaticOrJS::Bind(v) => write_str(&v, dest),
+        StaticOrJS::Static(v) => write_str_with_quotes(&v, dest),
     }
 }

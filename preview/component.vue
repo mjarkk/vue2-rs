@@ -17,6 +17,13 @@
       <button v-on:click="count++">+</button>
       <button @click="count--">-</button>
     </div>
+    <Test/>
+    <Test>
+      Slot text content
+    </Test>
+    <Test>
+      <div>Slot content</div>
+    </Test>
     <!-- <div v-text="'abc'" />
     <div v-html="'abc'" />
     <div v-show="false"><div /></div>
@@ -31,9 +38,13 @@
 </template>
 
 <script>
+import Test from './test.vue'
 import { defineComponent } from "@vue/composition-api";
 
 export default defineComponent({
+  components: {
+    Test,
+  },
   data: () => ({
     list: ["a", "b"],
     count: 1,

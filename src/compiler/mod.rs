@@ -24,7 +24,6 @@ pub struct Parser {
 #[derive(Debug, Clone)]
 pub struct Script {
     pub lang: Option<String>,
-    pub default_export_location: Option<SourceLocation>,
     pub content: SourceLocation,
 }
 
@@ -129,7 +128,7 @@ impl Parser {
                         template::TagType::OpenAndClose => return Err(ParserError::new(self, "tag type not allowed on top level")),
                     };
 
-                    let lang: Option<String> = top_level_tag.1.args.has_attr_or_prop_with_string("lang");
+                    let lang: Option<&str> = top_level_tag.1.args.has_attr_or_prop_with_string("lang");
 
                     match top_level_tag.0 {
                         TopLevelTag::DocType | TopLevelTag::Comment => continue,
@@ -140,7 +139,7 @@ impl Parser {
                             let children = template::compile(self)?;
 
                             self.template = Some(Template{
-                                lang,
+                                lang: if let Some(lang) = lang { Some(lang.to_string())} else {None},
                                 content: children,
                             });
                         },
@@ -150,22 +149,18 @@ impl Parser {
                             }
                             let script_start = self.current_char;
 
-                            let default_export_location = js::compile_script_content(self)?;
+                            js::compile_script_content(self)?;
                             let content = SourceLocation(script_start, self.current_char - "</script>".len());
 
                             self.script = Some(Script{
-                                lang,
-                                default_export_location,
+                                lang: if let Some(lang) = lang { Some(lang.to_string())} else {None},
                                 content,
                             });
                         },
                         TopLevelTag::Style => {
-                            let scoped = match top_level_tag.1.args.has_attr_or_prop("scoped") {
-                                Some("true") => true,
-                                _ => false,
-                            };
+                            let scoped = top_level_tag.1.args.has_attr_or_prop("scoped").is_some();
 
-                            match (scoped, lang.as_ref().map(|v| v.as_str())) {
+                            match (scoped, lang) {
                                 (true, None) | (true, Some("css")) => {
                                     let start = self.current_char;
                                     let injection_points = style::parse_scoped_css(self, style::SelectorsEnd::StyleClosure)?;
@@ -179,7 +174,7 @@ impl Parser {
                                     let content = SourceLocation(style_start, style_end);
 
                                     self.styles.push(Style::Normal(NormalStyle{
-                                        lang,
+                                        lang: if let Some(lang) = lang { Some(lang.to_string())} else {None},
                                         scoped,
                                         content,
                                     }));
@@ -304,11 +299,11 @@ impl SourceLocation {
     //         Vec::new()
     //     }
     // }
-    pub fn write_to_vec(&self, parser: &Parser, dest: &mut Vec<char>) {
-        for c in self.chars(parser) {
-            dest.push(*c);
-        }
-    }
+    // pub fn write_to_vec(&self, parser: &Parser, dest: &mut Vec<char>) {
+    //     for c in self.chars(parser) {
+    //         dest.push(*c);
+    //     }
+    // }
     pub fn write_to_string(&self, parser: &Parser, dest: &mut String) {
         for c in self.chars(parser) {
             dest.push(*c);

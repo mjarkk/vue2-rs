@@ -164,7 +164,8 @@ pub fn compile(p: &mut Parser) -> Result<Vec<Child>, ParserError> {
         if compile_result.1.eq(p, "template".chars()) {
             return Ok(compile_result.0);
         } else {
-            compile_result = Child::parse_children(p, &mut Vec::new())?;
+            let mut next_compile_result = Child::parse_children(p, &mut Vec::new())?;
+            compile_result.0.append(&mut next_compile_result.0);
         }
     }
 }
@@ -177,6 +178,7 @@ pub enum Child {
 }
 
 impl Child {
+    // Returns a list of children, and the tag name of the closing tag
     fn parse_children(
         p: &mut Parser,
         parents_tag_names: &mut Vec<SourceLocation>,
@@ -213,7 +215,13 @@ impl Child {
                                     break;
                                 }
                             }
-                            if found || tag.name.eq(p, "template".chars()) {
+
+                            if found {
+                                return Ok((resp, tag.name));
+                            }
+
+                            // Always go back in the tree if a template tag is found
+                            if tag.name.eq(p, "template".chars()) {
                                 return Ok((resp, tag.name));
                             }
                         }
@@ -488,6 +496,23 @@ pub fn is_tag_name_a_custom_component(parser: &Parser, tag_name: &SourceLocation
     tag_name.eq_some(parser, false, html_elements).is_none()
 }
 
+#[derive(Debug, Clone)]
+pub enum StaticOrJS {
+    Non,
+    Static(String),
+    Bind(String),
+}
+
+impl StaticOrJS {
+    fn is_static(&self) -> Option<&str> {
+        if let Self::Static(v) = self {
+            Some(v.as_str())
+        } else {
+            None
+        }
+    }
+}
+
 // https://vuejs.org/v2/guide/render-function.html
 // This is a somewhat rust representation of the vue component render arguments
 #[derive(Debug, Clone)]
@@ -499,21 +524,22 @@ pub struct VueTagArgs {
     // Same API as `v-bind:class`, accepting either
     // a string, object, or array of strings and objects.
     // {foo: true, bar: false}
-    pub class: Option<String>,
+    pub class: Option<StaticOrJS>,
 
     // Same API as `v-bind:style`, accepting either
     // a string, object, or array of objects.
     //{ color: 'red', fontSize: '14px'}
-    pub style: Option<String>,
+    pub style: Option<StaticOrJS>,
 
     // Normal HTML attributes
     // OR
     // Component props
     // { foo: 'bar' }
-    pub attrs_or_props: Option<Vec<(String, String)>>,
+    pub attrs_or_props: Option<Vec<(String, StaticOrJS)>>,
 
     // DOM properties
     // domProps: { innerHTML: 'baz' }
+    // The value is expected to be JS
     pub dom_props: Option<Vec<(String, String)>>,
 
     // Event handlers are nested under `on`, though
@@ -543,13 +569,13 @@ pub struct VueTagArgs {
 
     // The name of the slot, if this component is the
     // child of another component
-    pub slot: Option<String>, // "name-of-slot"
+    pub slot: Option<StaticOrJS>, // "name-of-slot"
 
     // Other special top-level properties
     // "myKey"
-    pub key: Option<String>,
+    pub key: Option<StaticOrJS>,
     // ref = "myRef"
-    pub ref_: Option<String>,
+    pub ref_: Option<StaticOrJS>,
 
     // If you are applying the same ref name to multiple
     // elements in the render function. This will make `$refs.myRef` become an array
@@ -577,49 +603,30 @@ impl VueTagArgs {
         }
     }
 
-    pub fn has_attr_or_prop(&self, name: &str) -> Option<&str> {
+    pub fn has_attr_or_prop(&self, name: &str) -> Option<&StaticOrJS> {
         if let Some(attrs_or_props) = self.attrs_or_props.as_ref() {
-            for (key, js_value) in attrs_or_props {
+            for (key, value) in attrs_or_props {
                 if key == name {
-                    return Some(&js_value);
+                    return Some(value);
                 }
             }
         }
         None
     }
 
-    pub fn has_attr_or_prop_with_string(&self, name: &str) -> Option<String> {
-        let mut value = self.has_attr_or_prop(name)?.chars();
-
-        let quote = match value.next()? {
-            '\'' => '\'',
-            '"' => '"',
-            '`' => '`',
-            _ => return None,
-        };
-
-        let mut resp = String::new();
-        loop {
-            match value.next()? {
-                c if c == quote => break,
-                '\\' => resp.push(value.next()?),
-                c => resp.push(c),
-            }
-        }
-
-        Some(resp)
+    pub fn has_attr_or_prop_with_string(&self, name: &str) -> Option<&str> {
+        Some(self.has_attr_or_prop(name)?.is_static()?)
     }
 
     fn set_default_or_bind(
         &mut self,
         p: &Parser,
         key: arg::ParseArgNameResult,
-        value_as_js: String,
+        value: StaticOrJS,
         is_bind: bool,
     ) -> Result<(), ParserError> {
         let value_to_match = if is_bind {
             if let Some(target) = key.target.as_ref() {
-                println!("{}", target.as_str());
                 target.as_str()
             } else {
                 return Err(ParserError::new(p, "expected a v-bind target"));
@@ -629,14 +636,14 @@ impl VueTagArgs {
         };
 
         match value_to_match {
-            "class" => self.class = Some(value_as_js),
-            "style" => self.style = Some(value_as_js),
-            "slot" => self.slot = Some(value_as_js),
-            "key" => self.key = Some(value_as_js),
-            "ref" => self.ref_ = Some(value_as_js),
+            "class" => self.class = Some(value),
+            "style" => self.style = Some(value),
+            "slot" => self.slot = Some(value),
+            "key" => self.key = Some(value),
+            "ref" => self.ref_ = Some(value),
             _ => add_or_set(
                 &mut self.attrs_or_props,
-                (value_to_match.to_string(), value_as_js),
+                (value_to_match.to_string(), value),
             ),
         };
 

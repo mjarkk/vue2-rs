@@ -178,6 +178,11 @@ impl Plugin {
         write_str(id_hash, resp);
         resp.push('\'');
 
+        // Write the filename to the component
+        write_str("\n__vue_2_file_default_export__.__file = '", resp);
+        write_str_escaped(id, '\'', '\\', resp);
+        resp.push('\'');
+
         write_str("\nexport default __vue_2_file_default_export__;", resp);
 
         self.components_cache.insert(id.to_string(), cache_entry);

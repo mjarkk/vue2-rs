@@ -70,14 +70,6 @@ mod tests {
         assert!(result.template.is_none());
         let script = result.script.as_ref().unwrap();
         assert_eq!(script.content.string(&result), "export default {}");
-        assert_eq!(
-            script
-                .default_export_location
-                .as_ref()
-                .unwrap()
-                .string(&result),
-            "export default",
-        );
         assert_eq!(result.styles.len(), 0);
     }
 
@@ -112,23 +104,7 @@ mod tests {
 
         let script = result.script.as_ref().unwrap();
         assert_eq!(script.content.string(&result), "export default {}");
-        assert_eq!(
-            script
-                .default_export_location
-                .as_ref()
-                .unwrap()
-                .string(&result),
-            "export default",
-        );
         assert_eq!(script.lang.as_ref().unwrap(), "ts");
-        assert_eq!(
-            script
-                .default_export_location
-                .as_ref()
-                .unwrap()
-                .string(&result),
-            "export default"
-        );
 
         let style_1 = unwrap_scoped_css(&result.styles, 0);
         assert_eq!(style_1, "h1[data-v-example] {color: red;}");

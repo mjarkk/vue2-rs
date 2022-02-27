@@ -46,6 +46,9 @@ This is a project that is in progress
         - [ ] `v-slot`
         - [ ] `v-text`
         - [ ] `v-html`
+    - [ ] Support for `<slot>` element
+      - [ ] Default slot
+      - [ ] Others
 - Script
   - [x] Basic start and end detection (`<script>..</script>`)
   - [x] Inject JS render function from template

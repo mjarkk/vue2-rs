@@ -1,6 +1,6 @@
 use super::super::utils::is_space;
 use super::super::{js, Parser, ParserError, SourceLocation};
-use super::{add_or_set, VueTagArgs};
+use super::{add_or_set, StaticOrJS, VueTagArgs};
 
 pub fn new_try_parse(
     p: &mut Parser,
@@ -89,7 +89,11 @@ pub fn new_try_parse(
             result.set_default_or_bind(
                 p,
                 name_result,
-                escape_string_to_js_string_or(contents, String::from("true")),
+                if let Some(value) = contents {
+                    StaticOrJS::Static(value)
+                } else {
+                    StaticOrJS::Non
+                },
                 false,
             )?;
             result.has_js_component_args = true;
@@ -97,7 +101,7 @@ pub fn new_try_parse(
         VueArgKind::Bind => {
             let (content, next_c) = get_arg_js_value(p)?;
             c = next_c;
-            result.set_default_or_bind(p, name_result, content, true)?;
+            result.set_default_or_bind(p, name_result, StaticOrJS::Bind(content), true)?;
             result.has_js_component_args = true;
         }
         VueArgKind::On => {
@@ -186,18 +190,18 @@ pub fn new_try_parse(
                 if let Some(target) = name_result.target.as_ref() {
                     add_or_set(
                         &mut result.attrs_or_props,
-                        (target.clone(), content.clone()),
+                        (target.clone(), StaticOrJS::Bind(content.to_string())),
                     );
                 } else {
                     add_or_set(
                         &mut result.attrs_or_props,
-                        (String::from("value"), content.clone()),
+                        (String::from("value"), StaticOrJS::Bind(content.to_string())),
                     );
                 }
             } else {
                 add_or_set(
                     &mut result.dom_props,
-                    (String::from("value"), content.clone()),
+                    (String::from("value"), content.to_string()),
                 );
             }
 

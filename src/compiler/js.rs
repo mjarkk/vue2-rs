@@ -69,49 +69,10 @@ pub fn parse_template_arg(
     Ok(global_references.unwrap())
 }
 
-pub fn compile_script_content(p: &mut Parser) -> Result<Option<SourceLocation>, ParserError> {
-    let mut default_export_location: Option<SourceLocation> = None;
-    'outer_loop: loop {
+pub fn compile_script_content(p: &mut Parser) -> Result<(), ParserError> {
+    loop {
         match p.must_read_one()? {
             c if handle_common(p, c, &mut None)? => {}
-
-            // check if this is the location of the "export default"
-            'e' => {
-                let default_export_start = p.current_char - 1;
-                let mut export_remaining_chars = "xport".chars();
-                while let Some(c) = export_remaining_chars.next() {
-                    if p.must_read_one()? != c {
-                        p.current_char -= 1;
-                        continue 'outer_loop;
-                    }
-                }
-
-                // There must be at least one space between "export" and "default"
-                if !is_space(p.must_seek_one()?) {
-                    continue;
-                }
-
-                // Read first character ('d') of "default"
-                if p.must_read_one_skip_spacing()? != 'd' {
-                    p.current_char -= 1;
-                    continue;
-                };
-
-                let mut default_remaining_chars = "efault".chars();
-                while let Some(c) = default_remaining_chars.next() {
-                    if p.must_read_one()? != c {
-                        p.current_char -= 1;
-                        continue 'outer_loop;
-                    }
-                }
-
-                if !is_space(p.must_seek_one()?) {
-                    continue;
-                }
-
-                default_export_location =
-                    Some(SourceLocation(default_export_start, p.current_char));
-            }
 
             // Check if this is the script tag end </script>
             '<' => {
@@ -149,7 +110,7 @@ pub fn compile_script_content(p: &mut Parser) -> Result<Option<SourceLocation>, 
                                     ));
                                 }
 
-                                return Ok(default_export_location);
+                                return Ok(());
                             }
                         }
                     }
@@ -398,22 +359,4 @@ fn parse_comment(p: &mut Parser) -> Result<bool, ParserError> {
         }
         _ => Ok(false),
     }
-}
-
-pub fn escape_quotes(input: &str, quote: char) -> String {
-    let mut resp = String::new();
-    for c in input.chars() {
-        match c {
-            c if c == quote => {
-                resp.push('\\');
-                resp.push(quote);
-            }
-            '\\' => {
-                resp.push('\\');
-                resp.push('\\');
-            }
-            c => resp.push(c),
-        }
-    }
-    resp
 }
