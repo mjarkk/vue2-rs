@@ -236,14 +236,20 @@ pub fn child_to_js(child: &Child, p: &Parser, resp: &mut Vec<char>) -> ChildToJs
                     }
                 }
                 Some(1) => {
+                    // Is <slot>
                     artifacts.is_slot = true;
                     if let Some(name) = tag.args.has_attr_or_prop("name") {
                         write_str("_vm._t(", resp);
                         write_static_or_js(name, resp);
-                        resp.push(')');
                     } else {
-                        write_str("_vm._t(\"default\")", resp);
+                        write_str("_vm._t(\"default\"", resp);
                     }
+                    if children_len != 0 {
+                        write_str(",function() {return [", resp);
+                        children_to_js(children, p, resp);
+                        write_str("]}", resp);
+                    }
+                    resp.push(')');
                 }
                 _ => {
                     // Is a normal tag,

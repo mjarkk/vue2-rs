@@ -49,7 +49,7 @@ This is a project that is in progress
     - [ ] [`<slot>` element](https://v2.vuejs.org/v2/guide/components-slots.html)
       - [x] Default slot
       - [ ] Named slots
-      - [ ] Fallback content
+      - [x] Default slot content
       - [ ] Others
 - Script
   - [x] Basic start and end detection (`<script>..</script>`)

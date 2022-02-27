@@ -1,19 +1,19 @@
 <template>
-<div class="test-component">
+  <div class="test-component">
     <div>
-        <slot/>
+      <slot>
+        <div>Default content</div>
+      </slot>
     </div>
-</div>
+  </div>
 </template>
 
 <script>
-export default {
-
-}
+export default {};
 </script>
 
 <style scoped>
 * {
-    color: darkorchid;
+  color: darkorchid;
 }
 </style>
