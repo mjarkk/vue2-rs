@@ -255,30 +255,6 @@ fn get_arg_js_value(p: &mut Parser) -> Result<(String, char), ParserError> {
     Ok((value, c))
 }
 
-fn escape_string_to_js_string_or(input: Option<String>, or: String) -> String {
-    if let Some(mut input) = input {
-        escape_string_to_js_string(&mut input);
-        input
-    } else {
-        or
-    }
-}
-
-fn escape_string_to_js_string(input: &mut String) {
-    input.push('"');
-    let input_len = input.len();
-
-    for idx in (0..input_len).rev().skip(1) {
-        match input.get(idx..idx + 1) {
-            Some("\"") | Some("\\") => {
-                input.insert(idx, '\\');
-            }
-            _ => {}
-        }
-    }
-    input.insert(0, '"');
-}
-
 fn might_get_arg_value(
     p: &mut Parser,
     name: &ParseArgNameResult,
