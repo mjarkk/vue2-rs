@@ -237,7 +237,13 @@ pub fn child_to_js(child: &Child, p: &Parser, resp: &mut Vec<char>) -> ChildToJs
                 }
                 Some(1) => {
                     artifacts.is_slot = true;
-                    write_str("_vm._t(\"default\")", resp);
+                    if let Some(name) = tag.args.has_attr_or_prop("name") {
+                        write_str("_vm._t(", resp);
+                        write_static_or_js(name, resp);
+                        resp.push(')');
+                    } else {
+                        write_str("_vm._t(\"default\")", resp);
+                    }
                 }
                 _ => {
                     // Is a normal tag,
