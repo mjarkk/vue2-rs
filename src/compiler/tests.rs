@@ -299,7 +299,7 @@ mod tests {
             let template = result.template.as_ref().unwrap();
 
             let mut resp: Vec<char> = Vec::new();
-            children_to_js(&template.content, &result, &mut resp);
+            children_to_js(&template.content, &result, &mut resp, false);
             resp.iter().collect()
         }
 
@@ -562,6 +562,21 @@ mod tests {
             template_to_js_eq(
                 "<div><template v-for='(value,key) in list'>{{value + key}}</template></div>",
                 "_c('div',_vm._l((_vm.list),(value,key)=>[_vm._v(_vm._s(value + key))]),0)",
+            );
+        }
+
+        #[test]
+        fn slot_tag() {
+            // default slot
+            template_to_js_eq("<slot />", "_vm._t(\"default\")");
+
+            // slot with name
+            template_to_js_eq("<slot name='test' />", "_vm._t(\"test\")");
+
+            // slot with fallback content
+            template_to_js_eq(
+                "<slot><p>Fallback Content</p></slot>",
+                "_vm._t(\"default\",function(){return [_c('p',[_vm._v(\"Fallback Content\")])]})",
             );
         }
     }

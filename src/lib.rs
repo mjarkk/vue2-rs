@@ -162,28 +162,25 @@ impl Plugin {
             let lang_extension = script.lang.as_ref().map(|v| v.as_str()).unwrap_or("js");
             write_str("?vue&type=logic&lang.", resp);
             write_str(lang_extension, resp);
-            write_str(
-                "';\nconst __vue_2_file_default_export__ = logic.default || {};",
-                resp,
-            );
+            write_str("';\nconst c = logic.default || {};", resp);
         } else {
-            write_str("\nconst __vue_2_file_default_export__ = {};", resp);
+            write_str("\nconst c = {};", resp);
         }
 
         // Write the renderer to the result
         template_to_js(&parsed_code, resp);
 
         // Write the _scopeId to the result
-        write_str("\n__vue_2_file_default_export__._scopeId = 'data-v-", resp);
+        write_str("\nc._scopeId = 'data-v-", resp);
         write_str(id_hash, resp);
         resp.push('\'');
 
         // Write the filename to the component
-        write_str("\n__vue_2_file_default_export__.__file = '", resp);
+        write_str("\nc.__file = '", resp);
         write_str_escaped(id, '\'', '\\', resp);
         resp.push('\'');
 
-        write_str("\nexport default __vue_2_file_default_export__;", resp);
+        write_str("\nexport default c;", resp);
 
         self.components_cache.insert(id.to_string(), cache_entry);
 

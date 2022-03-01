@@ -4,6 +4,8 @@
       <slot>
         <div>Default content</div>
       </slot>
+
+      <slot name="test" />
     </div>
   </div>
 </template>

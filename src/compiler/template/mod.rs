@@ -1,6 +1,8 @@
 mod arg;
 pub mod to_js;
 
+use miette::SourceCode;
+
 use super::utils::is_space;
 use super::{js, Parser, ParserError, SourceLocation};
 
@@ -93,8 +95,7 @@ pub fn parse_tag(p: &mut Parser, v_else_allowed: bool) -> Result<Tag, ParserErro
     // Parse args
     loop {
         c = p.must_read_one_skip_spacing()?;
-        c = match arg::new_try_parse(p, c, &mut tag.args, v_else_allowed, tag.is_custom_component)?
-        {
+        c = match arg::try_parse(p, c, &mut tag.args, v_else_allowed, tag.is_custom_component)? {
             Some(next_char) => next_char,
             None => c,
         };
@@ -161,11 +162,13 @@ pub fn add_or_set<T>(list: &mut Option<Vec<T>>, add: T) {
 pub fn compile(p: &mut Parser) -> Result<Vec<Child>, ParserError> {
     let mut compile_result = Child::parse_children(p, &mut Vec::new())?;
     loop {
-        if compile_result.1.eq(p, "template".chars()) {
-            return Ok(compile_result.0);
+        if compile_result.closing_tag_name.eq(p, "template".chars()) {
+            return Ok(compile_result.children);
         } else {
             let mut next_compile_result = Child::parse_children(p, &mut Vec::new())?;
-            compile_result.0.append(&mut next_compile_result.0);
+            compile_result
+                .children
+                .append(&mut next_compile_result.children);
         }
     }
 }
@@ -177,14 +180,22 @@ pub enum Child {
     Var(String),
 }
 
+struct ParseChildrenResult {
+    closing_tag_name: SourceLocation,
+    children: Vec<Child>,
+    children_with_v_slot: usize,
+}
+
 impl Child {
     // Returns a list of children, and the tag name of the closing tag
     fn parse_children(
         p: &mut Parser,
         parents_tag_names: &mut Vec<SourceLocation>,
-    ) -> Result<(Vec<Self>, SourceLocation), ParserError> {
+    ) -> Result<ParseChildrenResult, ParserError> {
         let mut resp: Vec<Child> = Vec::with_capacity(1);
         let mut inside_v_if = false;
+        let mut children_with_v_slot = 0usize;
+
         loop {
             let (text_node, compile_now) = Self::compile_text_node(p)?;
             if let Some(node) = text_node {
@@ -194,7 +205,7 @@ impl Child {
 
             match compile_now {
                 CompileAfterTextNode::Tag => {
-                    let tag = parse_tag(p, inside_v_if)?;
+                    let mut tag = parse_tag(p, inside_v_if)?;
 
                     if let Some(modifier) = tag.args.modifier.as_ref() {
                         inside_v_if = match modifier {
@@ -204,6 +215,10 @@ impl Child {
                         };
                     } else {
                         inside_v_if = false;
+                    }
+
+                    if tag.args.slot.is_some() {
+                        children_with_v_slot += 1;
                     }
 
                     match tag.type_ {
@@ -217,12 +232,20 @@ impl Child {
                             }
 
                             if found {
-                                return Ok((resp, tag.name));
+                                return Ok(ParseChildrenResult {
+                                    closing_tag_name: tag.name,
+                                    children: resp,
+                                    children_with_v_slot,
+                                });
                             }
 
                             // Always go back in the tree if a template tag is found
                             if tag.name.eq(p, "template".chars()) {
-                                return Ok((resp, tag.name));
+                                return Ok(ParseChildrenResult {
+                                    closing_tag_name: tag.name,
+                                    children: resp,
+                                    children_with_v_slot,
+                                });
                             }
                         }
                         TagType::Open => {
@@ -245,7 +268,7 @@ impl Child {
                                 Self::parse_children(p, parents_tag_names);
 
                             let tag_name = parents_tag_names.pop().unwrap();
-                            let (children, closing_tag_name) = compile_children_result?;
+                            let compiled_children = compile_children_result?;
 
                             // Remove the local variables we above inserted
                             if let Some(new_local_variables) = local_variables {
@@ -260,11 +283,22 @@ impl Child {
                                 }
                             }
 
-                            resp.push(Self::Tag(tag, children));
+                            if compiled_children.children_with_v_slot > 0 {
+                                tag.args.has_js_component_args = true;
+                                tag.args.children_with_slot =
+                                    compiled_children.children_with_v_slot;
+                            }
 
-                            let correct_closing_tag = tag_name.eq_self(p, &closing_tag_name);
+                            resp.push(Self::Tag(tag, compiled_children.children));
+
+                            let correct_closing_tag =
+                                tag_name.eq_self(p, &compiled_children.closing_tag_name);
                             if !correct_closing_tag {
-                                return Ok((resp, closing_tag_name));
+                                return Ok(ParseChildrenResult {
+                                    children: resp,
+                                    closing_tag_name: compiled_children.closing_tag_name,
+                                    children_with_v_slot,
+                                });
                             }
                         }
                         TagType::OpenAndClose => {
@@ -560,16 +594,9 @@ pub struct VueTagArgs {
     // of it for you.
     pub directives: Option<Vec<(arg::ParseArgNameResult, String)>>,
 
-    // TODO
-    // Scoped slots in the form of
-    // { name: props => VNode | Array<VNode> }
-    // scopedSlots: {
-    //   default: props => createElement('span', props.text)
-    // },
-
-    // The name of the slot, if this component is the
-    // child of another component
-    pub slot: Option<StaticOrJS>, // "name-of-slot"
+    // A template tag might have a v-slot attribute
+    pub slot: Option<(String, Option<String>)>,
+    pub children_with_slot: usize,
 
     // Other special top-level properties
     // "myKey"
@@ -597,6 +624,7 @@ impl VueTagArgs {
             native_on: None,
             directives: None,
             slot: None,
+            children_with_slot: 0,
             key: None,
             ref_: None,
             ref_in_for: None,
@@ -638,7 +666,6 @@ impl VueTagArgs {
         match value_to_match {
             "class" => self.class = Some(value),
             "style" => self.style = Some(value),
-            "slot" => self.slot = Some(value),
             "key" => self.key = Some(value),
             "ref" => self.ref_ = Some(value),
             _ => add_or_set(

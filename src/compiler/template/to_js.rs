@@ -8,9 +8,9 @@ use std::slice::Iter;
 */
 
 const DEFAULT_CONF: &'static str = "
-__vue_2_file_default_export__._compiled = true;
-__vue_2_file_default_export__.staticRenderFns = [];
-__vue_2_file_default_export__.render = function(c) {
+c._compiled = true;
+c.staticRenderFns = [];
+c.render = function(c) {
     const _vm = this;
     const _h = _vm.$createElement;
     const _c = _vm._self._c || _h;
@@ -29,11 +29,11 @@ pub fn template_to_js(p: &Parser, resp: &mut Vec<char>) {
             write_str("[]", resp);
         }
         1 => {
-            children_to_js(&template.content, p, resp);
+            children_to_js(&template.content, p, resp, false);
         }
         _ => {
             resp.push('[');
-            children_to_js(&template.content, p, resp);
+            children_to_js(&template.content, p, resp, false);
             resp.push(']');
         }
     }
@@ -49,6 +49,7 @@ pub fn children_to_js(
     children: &Vec<Child>,
     p: &Parser,
     resp: &mut Vec<char>,
+    filter_out_tags_with_slot_attr: bool,
 ) -> AddChildrenResult {
     let mut list_builder = CommaSeparatedEntries::new();
     let mut children_iter = children.iter();
@@ -100,7 +101,12 @@ pub fn children_to_js(
             _ => {}
         }
 
-        let artifacts = child_to_js(child, p, resp);
+        let artifacts = child_to_js(child, p, resp, !filter_out_tags_with_slot_attr);
+
+        if artifacts.skipped {
+            continue;
+        }
+
         inside_of_if = artifacts.opened_inline_if_else;
         if let Some(remaining_v_for_magic_number) = artifacts.move_v_for_magic_number_up {
             add_magic_number = Some(if children.len() > 1 {
@@ -163,19 +169,31 @@ pub struct ChildToJsArtifacts {
     pub move_v_for_magic_number_up: Option<u8>,
     pub is_custom_component: bool,
     pub is_slot: bool,
+    pub skipped: bool,
 }
 
-pub fn child_to_js(child: &Child, p: &Parser, resp: &mut Vec<char>) -> ChildToJsArtifacts {
+pub fn child_to_js(
+    child: &Child,
+    p: &Parser,
+    resp: &mut Vec<char>,
+    slot_attr_allowed: bool,
+) -> ChildToJsArtifacts {
     let mut artifacts = ChildToJsArtifacts {
         opened_inline_if_else: false,
         is_v_for: false,
         move_v_for_magic_number_up: None,
         is_custom_component: false,
         is_slot: false,
+        skipped: false,
     };
 
     match child {
         Child::Tag(tag, children) => {
+            if !slot_attr_allowed && tag.args.slot.is_some() {
+                artifacts.skipped = true;
+                return artifacts;
+            }
+
             if let Some(modifier) = tag.args.modifier.as_ref() {
                 match modifier {
                     VueTagModifier::For(for_args) => {
@@ -208,7 +226,7 @@ pub fn child_to_js(child: &Child, p: &Parser, resp: &mut Vec<char>) -> ChildToJs
                 }
             }
 
-            let children_len = children.len();
+            let mut children_len = children.len();
 
             let custom_tag_check =
                 tag.name
@@ -221,10 +239,10 @@ pub fn child_to_js(child: &Child, p: &Parser, resp: &mut Vec<char>) -> ChildToJs
                         write_str("void 0", resp);
                     } else {
                         let result = if children_len == 1 && children.get(0).unwrap().is_v_for() {
-                            children_to_js(children, p, resp)
+                            children_to_js(children, p, resp, false)
                         } else {
                             resp.push('[');
-                            let result = children_to_js(children, p, resp);
+                            let result = children_to_js(children, p, resp, false);
                             resp.push(']');
                             result
                         };
@@ -245,8 +263,8 @@ pub fn child_to_js(child: &Child, p: &Parser, resp: &mut Vec<char>) -> ChildToJs
                         write_str("_vm._t(\"default\"", resp);
                     }
                     if children_len != 0 {
-                        write_str(",function() {return [", resp);
-                        children_to_js(children, p, resp);
+                        write_str(",function(){return [", resp);
+                        children_to_js(children, p, resp, false);
                         write_str("]}", resp);
                     }
                     resp.push(')');
@@ -257,29 +275,37 @@ pub fn child_to_js(child: &Child, p: &Parser, resp: &mut Vec<char>) -> ChildToJs
                     // Writes:
                     // _c('div', [_c(..), _c(..)])
 
+                    children_len -= tag.args.children_with_slot;
+
                     write_str("_c('", resp);
                     tag.name.write_to_vec_escape(p, resp, '\'', '\\');
                     resp.push('\'');
                     artifacts.is_custom_component = tag.is_custom_component;
                     if tag.args.has_js_component_args {
                         resp.push(',');
-                        vue_tag_args_to_js(&tag.args, resp, artifacts.is_custom_component);
+                        vue_tag_args_to_js(
+                            children,
+                            &tag.args,
+                            resp,
+                            artifacts.is_custom_component,
+                            p,
+                        );
                     }
 
                     if children_len != 0 {
                         resp.push(',');
                         let result = if children_len == 1 && children.get(0).unwrap().is_v_for() {
-                            children_to_js(children, p, resp)
+                            children_to_js(children, p, resp, true)
                         } else {
                             resp.push('[');
-                            let result = children_to_js(children, p, resp);
+                            let result = children_to_js(children, p, resp, true);
                             resp.push(']');
                             result
                         };
 
                         if let Some(magic_number) = result.add_magic_number {
                             // When using v-for a magic number is added
-                            // TODO: find out what this magic number exacly is
+                            // TODO: find out what this magic number exactly is
                             resp.push(',');
                             write_str(&magic_number.to_string(), resp);
                         }
@@ -343,7 +369,13 @@ fn write_text_quote(p: &Parser, location: &SourceLocation, resp: &mut Vec<char>)
     resp.push('"');
 }
 
-pub fn vue_tag_args_to_js(args: &VueTagArgs, dest: &mut Vec<char>, is_custom_component: bool) {
+pub fn vue_tag_args_to_js(
+    children: &Vec<Child>,
+    args: &VueTagArgs,
+    dest: &mut Vec<char>,
+    is_custom_component: bool,
+    p: &Parser,
+) {
     dest.push('{');
     let mut object_entries = CommaSeparatedEntries::new();
 
@@ -508,10 +540,26 @@ pub fn vue_tag_args_to_js(args: &VueTagArgs, dest: &mut Vec<char>, is_custom_com
         dest.push(']');
     }
 
-    if let Some(slot) = args.slot.as_ref() {
+    if args.children_with_slot > 0 {
         object_entries.add(dest);
-        write_str("slot:", dest);
-        write_static_or_js(slot, dest);
+        write_str("scopedSlots:[", dest);
+        let mut scoped_slots_entries = CommaSeparatedEntries::new();
+        for child in children {
+            if let Child::Tag(v, children) = child {
+                if let Some((slot_name, _)) = v.args.slot.as_ref() {
+                    scoped_slots_entries.add(dest);
+                    // Writes:
+                    // {key:"test",fn:function(){return [_c("div", [_vm._v("Test Slot content")])];},proxy:true}
+
+                    write_str("{key:", dest);
+                    write_str_with_quotes(slot_name, dest);
+                    write_str(",fn:function(){return [", dest);
+                    children_to_js(children, p, dest, true);
+                    write_str("]},proxy:true}", dest);
+                }
+            }
+        }
+        dest.push(']');
     }
 
     if let Some(key) = args.key.as_ref() {

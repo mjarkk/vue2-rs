@@ -2,7 +2,7 @@ use super::super::utils::is_space;
 use super::super::{js, Parser, ParserError, SourceLocation};
 use super::{add_or_set, StaticOrJS, VueTagArgs};
 
-pub fn new_try_parse(
+pub fn try_parse(
     p: &mut Parser,
     mut c: char,
     result: &mut VueTagArgs,
@@ -21,7 +21,7 @@ pub fn new_try_parse(
         "v-if" => (ExpectValue::Yes, false, false, VueArgKind::If),
         "v-pre" => (ExpectValue::Yes, false, false, VueArgKind::Pre),
         "v-else" => (ExpectValue::No, false, false, VueArgKind::Else),
-        "v-slot" => (ExpectValue::Yes, true, false, VueArgKind::Slot),
+        "v-slot" => (ExpectValue::Both, true, false, VueArgKind::Slot),
         "v-text" => (ExpectValue::Yes, false, false, VueArgKind::Text),
         "v-html" => (ExpectValue::Yes, false, false, VueArgKind::Html),
         "v-once" => (ExpectValue::No, false, false, VueArgKind::Once),
@@ -79,23 +79,14 @@ pub fn new_try_parse(
                 ),
             ))
         }
-        _ => {}
+        _ => {} // Ok
     };
 
     match arg_kind {
         VueArgKind::Default => {
             let (contents, next_c) = might_get_arg_value(p, &name_result, c)?;
             c = next_c;
-            result.set_default_or_bind(
-                p,
-                name_result,
-                if let Some(value) = contents {
-                    StaticOrJS::Static(value)
-                } else {
-                    StaticOrJS::Non
-                },
-                false,
-            )?;
+            result.set_default_or_bind(p, name_result, contents, false)?;
             result.has_js_component_args = true;
         }
         VueArgKind::Bind => {
@@ -209,7 +200,11 @@ pub fn new_try_parse(
             result.has_js_component_args = true;
         }
         VueArgKind::Slot => {
-            todo!("support slot");
+            if name_result.target.is_none() {}
+
+            let (content, next_c) = might_get_js_value(p, &name_result, c)?;
+            c = next_c;
+            result.slot = Some((name_result.target.unwrap(), content));
         }
         VueArgKind::Pre => {
             todo!("support pre");
@@ -230,6 +225,19 @@ pub fn new_try_parse(
     }
 
     Ok(Some(c))
+}
+
+fn might_get_js_value(
+    p: &mut Parser,
+    name: &ParseArgNameResult,
+    c: char,
+) -> Result<(Option<String>, char), ParserError> {
+    Ok(if name.parse_value_next {
+        let (contents, c) = get_arg_js_value(p)?;
+        (Some(contents), c)
+    } else {
+        (None, c)
+    })
 }
 
 fn get_arg_js_value(p: &mut Parser) -> Result<(String, char), ParserError> {
@@ -259,16 +267,16 @@ fn might_get_arg_value(
     p: &mut Parser,
     name: &ParseArgNameResult,
     c: char,
-) -> Result<(Option<String>, char), ParserError> {
+) -> Result<(StaticOrJS, char), ParserError> {
     Ok(if name.parse_value_next {
         let (contents, c) = get_arg_value(p)?;
-        (Some(contents), c)
+        (contents, c)
     } else {
-        (None, c)
+        (StaticOrJS::Non, c)
     })
 }
 
-fn get_arg_value(p: &mut Parser) -> Result<(String, char), ParserError> {
+fn get_arg_value(p: &mut Parser) -> Result<(StaticOrJS, char), ParserError> {
     let mut c = p.must_read_one_skip_spacing()?;
     let quote = match c {
         '\'' => '\'',
@@ -278,7 +286,7 @@ fn get_arg_value(p: &mut Parser) -> Result<(String, char), ParserError> {
             loop {
                 c = p.must_read_one()?;
                 if is_space(c) || c == '/' || c == '>' {
-                    return Ok((resp, c));
+                    return Ok((StaticOrJS::Static(resp), c));
                 }
                 resp.push(c);
             }
@@ -294,7 +302,7 @@ fn get_arg_value(p: &mut Parser) -> Result<(String, char), ParserError> {
         resp.push(c);
     }
 
-    Ok((resp, p.must_read_one()?))
+    Ok((StaticOrJS::Static(resp), p.must_read_one()?))
 }
 
 fn is_start_of_arg(c: char) -> bool {

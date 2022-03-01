@@ -6,8 +6,7 @@
       <h1>It wurks {{ count }}!</h1>
     </template>
     <template v-if="count" />
-    <template v-for="(key, index) in list">{{ key }} #{{ index }}</template> -->
-
+    <template v-for="(key, index) in list">{{ key }} #{{ index }}</template>
     <div class="foo" v-if="count">
       If <span>{{ count }}</span> !
     </div>
@@ -16,13 +15,17 @@
     <div>
       <button v-on:click="count++">+</button>
       <button @click="count--">-</button>
-    </div>
-    <Test/>
+    </div> -->
+    <Test />
+    <Test> Slot text content </Test>
     <Test>
-      Slot text content
+      <div>Slot content</div>
     </Test>
     <Test>
       <div>Slot content</div>
+      <template v-slot:test>
+        <div>Test Slot content</div>
+      </template>
     </Test>
     <!-- <div v-text="'abc'" />
     <div v-html="'abc'" />
@@ -38,7 +41,7 @@
 </template>
 
 <script>
-import Test from './test.vue'
+import Test from "./test.vue";
 import { defineComponent } from "@vue/composition-api";
 
 export default defineComponent({
