@@ -10,6 +10,7 @@ This is a project that is in progress
 ## TODO List
 
 - Template
+
   - [x] Basic start and end detection (`<template>..</template>`)
   - [x] Parsing
     - [x] Tags
@@ -50,7 +51,12 @@ This is a project that is in progress
       - [x] Default slot
       - [ ] Named slots
       - [x] Default slot content
-      - [ ] Others
+      - [ ] Slot args
+    - [ ] `v-slot`
+      - [ ] with no data arg
+      - [ ] data arg
+      - [ ] v-(if, if-else, else) working in combination with v-slot
+
 - Script
   - [x] Basic start and end detection (`<script>..</script>`)
   - [x] Inject JS render function from template
