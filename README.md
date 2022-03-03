@@ -49,11 +49,11 @@ This is a project that is in progress
         - [ ] `v-html`
     - [ ] [`<slot>` element](https://v2.vuejs.org/v2/guide/components-slots.html)
       - [x] Default slot
-      - [ ] Named slots
+      - [x] Named slots
       - [x] Default slot content
       - [ ] Slot args
     - [ ] `v-slot`
-      - [ ] with no data arg
+      - [x] with no data arg
       - [ ] data arg
       - [ ] v-(if, if-else, else) working in combination with v-slot
 
