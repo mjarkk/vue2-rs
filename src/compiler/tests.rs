@@ -294,13 +294,17 @@ mod tests {
         }
 
         fn template_to_js(html: &str) -> String {
+            template_to_js_result(html).unwrap()
+        }
+
+        fn template_to_js_result(html: &str) -> Result<String, ParserError> {
             let parser_input = format!("<template>{}</template>", html);
-            let result = Parser::new_and_parse(&parser_input, "example").unwrap();
+            let result = Parser::new_and_parse(&parser_input, "example")?;
             let template = result.template.as_ref().unwrap();
 
             let mut resp: Vec<char> = Vec::new();
             children_to_js(&template.content, &result, &mut resp, false);
-            resp.iter().collect()
+            Ok(resp.iter().collect())
         }
 
         #[test]
@@ -577,6 +581,27 @@ mod tests {
             template_to_js_eq(
                 "<slot><p>Fallback Content</p></slot>",
                 "_vm._t(\"default\",function(){return [_c('p',[_vm._v(\"Fallback Content\")])]})",
+            );
+        }
+
+        #[test]
+        fn v_slot_arg() {
+            // slot without content
+            template_to_js_eq(
+                "<foo><template v-slot:foo /></foo>",
+                "_c('foo',{scopedSlots:[{key:\"foo\",fn:function(){return []},proxy:true}]})",
+            );
+
+            // Slot with content
+            template_to_js_eq(
+                "<foo><template v-slot:foo><div/></template></foo>",
+                "_c('foo',{scopedSlots:[{key:\"foo\",fn:function(){return [_c('div')]},proxy:true}]})",
+            );
+
+            let res = template_to_js_result("<foo><template v-slot /></foo>").unwrap_err();
+            assert_eq!(
+                res.message,
+                "v-slot needs a target (for example: v-slot:foo)"
             );
         }
     }

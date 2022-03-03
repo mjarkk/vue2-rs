@@ -200,7 +200,12 @@ pub fn try_parse(
             result.has_js_component_args = true;
         }
         VueArgKind::Slot => {
-            if name_result.target.is_none() {}
+            if name_result.target.is_none() {
+                return Err(ParserError::new(
+                    p,
+                    "v-slot needs a target (for example: v-slot:foo)",
+                ));
+            }
 
             let (content, next_c) = might_get_js_value(p, &name_result, c)?;
             c = next_c;
@@ -369,6 +374,7 @@ fn parse_arg_name(p: &mut Parser, mut c: char) -> Result<(ParseArgNameResult, ch
                         break;
                     }
                     '/' | '>' => break,
+                    c if is_space(c) => break,
                     c => return invalid_character_err(p, c),
                 }
             }
@@ -390,7 +396,8 @@ fn parse_arg_name(p: &mut Parser, mut c: char) -> Result<(ParseArgNameResult, ch
                     parse_value_next = true;
                     break;
                 }
-                '/' | '>' => break,
+                '/' | '>' | ' ' => break,
+                c if is_space(c) => break,
                 c => return invalid_character_err(p, c),
             }
         }
@@ -416,6 +423,7 @@ fn parse_arg_name(p: &mut Parser, mut c: char) -> Result<(ParseArgNameResult, ch
                         break 'outer;
                     }
                     '/' | '>' => break,
+                    c if is_space(c) => break,
                     c => return invalid_character_err(p, c),
                 }
             }
