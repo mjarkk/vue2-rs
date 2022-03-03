@@ -542,7 +542,7 @@ pub fn vue_tag_args_to_js(
 
     if args.children_with_slot > 0 {
         object_entries.add(dest);
-        write_str("scopedSlots:[", dest);
+        write_str("scopedSlots:_vm._u([", dest);
         let mut scoped_slots_entries = CommaSeparatedEntries::new();
         for child in children {
             if let Child::Tag(v, children) = child {
@@ -559,7 +559,7 @@ pub fn vue_tag_args_to_js(
                 }
             }
         }
-        dest.push(']');
+        write_str("])", dest);
     }
 
     if let Some(key) = args.key.as_ref() {

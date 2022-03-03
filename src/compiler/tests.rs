@@ -589,13 +589,13 @@ mod tests {
             // slot without content
             template_to_js_eq(
                 "<foo><template v-slot:foo /></foo>",
-                "_c('foo',{scopedSlots:[{key:\"foo\",fn:function(){return []},proxy:true}]})",
+                "_c('foo',{scopedSlots:_vm._u([{key:\"foo\",fn:function(){return []},proxy:true}])})",
             );
 
             // Slot with content
             template_to_js_eq(
                 "<foo><template v-slot:foo><div/></template></foo>",
-                "_c('foo',{scopedSlots:[{key:\"foo\",fn:function(){return [_c('div')]},proxy:true}]})",
+                "_c('foo',{scopedSlots:_vm._u([{key:\"foo\",fn:function(){return [_c('div')]},proxy:true}])})",
             );
 
             let res = template_to_js_result("<foo><template v-slot /></foo>").unwrap_err();
