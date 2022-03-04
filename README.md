@@ -32,7 +32,6 @@ This is a project that is in progress
         - [x] `v-if`, `v-else-if`, `v-else`
         - [x] `v-for`
         - [ ] `v-pre`
-        - [ ] `v-slot`
         - [x] `v-text`
         - [x] `v-html`
         - [ ] `v-once`
@@ -45,17 +44,19 @@ This is a project that is in progress
         - [x] `v-for`
         - [ ] `v-pre`
         - [ ] `v-slot`
+          - [x] with no data arg
+          - [ ] data arg
+          - [ ] working in combination with v-(if, if-else, else)
         - [ ] `v-text`
         - [ ] `v-html`
     - [ ] [`<slot>` element](https://v2.vuejs.org/v2/guide/components-slots.html)
       - [x] Default slot
       - [x] Named slots
       - [x] Default slot content
-      - [ ] Slot args
-    - [ ] `v-slot`
-      - [x] with no data arg
-      - [ ] data arg
-      - [ ] v-(if, if-else, else) working in combination with v-slot
+      - [ ] Slot args using v-bind
+        - [ ] `v-bind=".."`
+        - [ ] `v-bind:value=".."`
+        - [ ] `v-bind:foo=".." v-bind:bar=".." v-bind=".."`
 
 - Script
   - [x] Basic start and end detection (`<script>..</script>`)
