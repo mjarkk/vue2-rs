@@ -23,8 +23,8 @@
     </Test>
     <Test>
       <div>Slot content</div>
-      <template v-slot:test>
-        <div>Test Slot content</div>
+      <template v-slot:test="data">
+        <div>Test Slot content {{ data }}</div>
       </template>
     </Test>
     <!-- <div v-text="'abc'" />

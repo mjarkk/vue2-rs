@@ -5,7 +5,12 @@
         <div>Default content</div>
       </slot>
 
-      <slot name="test" />
+      <slot
+        name="test"
+        v-bind="{ test: 'ok' }"
+        v-bind:bar="'bar'"
+        v-bind:foo="'foo'"
+      />
     </div>
   </div>
 </template>
