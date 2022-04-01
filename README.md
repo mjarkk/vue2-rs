@@ -89,9 +89,15 @@ This is a project that is in progress
 - [vite writing a plugin](https://vitejs.dev/guide/api-plugin.html)
 - [wasm-bindgen docs](https://rustwasm.github.io/docs/wasm-bindgen/examples/web-audio.html)
 
+### Setup
+
+```sh
+cargo install wasm-pack
+```
+
 ### Build WASM file and run vite to test
 
-```
+```sh
 wasm-pack build --target nodejs --dev && npm run dev
 ```
 
