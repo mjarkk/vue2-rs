@@ -182,7 +182,7 @@ mod tests {
         let (test1, children) = unwrap_element_child(&root_div_children, 1);
         assert_eq!(test1.name.string(&result), "test1");
         match test1.type_ {
-            TagType::OpenAndClose => {}
+            TagType::OpenAndClose(_) => {}
             v => panic!("{:?}", v),
         }
         assert_eq!(children.len(), 0);
@@ -190,7 +190,7 @@ mod tests {
         let (test2, children) = unwrap_element_child(&root_div_children, 2);
         assert_eq!(test2.name.string(&result), "test2");
         match test2.type_ {
-            TagType::OpenAndClose => {}
+            TagType::OpenAndClose(_) => {}
             v => panic!("{:?}", v),
         }
         assert_eq!(children.len(), 0);
@@ -198,7 +198,7 @@ mod tests {
         let (test3, children) = unwrap_element_child(&root_div_children, 3);
         assert_eq!(test3.name.string(&result), "test3");
         match test3.type_ {
-            TagType::Open => {}
+            TagType::Open(_) => {}
             v => panic!("{:?}", v),
         }
         assert_eq!(children.len(), 4);
@@ -581,6 +581,21 @@ mod tests {
             template_to_js_eq(
                 "<slot><p>Fallback Content</p></slot>",
                 "_vm._t(\"default\",function(){return [_c('p',[_vm._v(\"Fallback Content\")])]})",
+            );
+
+            // Slot with default v-bind
+            template_to_js_eq("<slot name=\"test\" v-bind=\"{ test: 'ok' }\" />", "");
+
+            // Slot with targetted v-bind
+            template_to_js_eq(
+                "<slot name=\"test\" v-bind:bar=\"'bar'\" v-bind:foo=\"'foo'\" />",
+                "",
+            );
+
+            // Slot with combined default v-bind and targetted
+            template_to_js_eq(
+                "<slot name=\"test\" v-bind=\"{ test: 'ok' }\" v-bind:bar=\"'bar'\" v-bind:foo=\"'foo'\" />",
+                "_vm._t(\"test\",null,{\"bar\":'bar',\"foo\":'foo'},{ test: 'ok' })",
             );
         }
 

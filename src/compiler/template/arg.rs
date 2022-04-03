@@ -1,13 +1,13 @@
 use super::super::utils::is_space;
 use super::super::{js, Parser, ParserError, SourceLocation};
-use super::{add_or_set, StaticOrJS, VueTagArgs};
+use super::{add_or_set, StaticOrJS, TagKind, VueTagArgs};
 
 pub fn try_parse(
     p: &mut Parser,
     mut c: char,
     result: &mut VueTagArgs,
     v_else_allowed: bool,
-    is_custom_component: bool,
+    tag_kind: &TagKind,
 ) -> Result<Option<char>, ParserError> {
     if !is_start_of_arg(c) {
         return Ok(None);
@@ -86,14 +86,36 @@ pub fn try_parse(
         VueArgKind::Default => {
             let (contents, next_c) = might_get_arg_value(p, &name_result, c)?;
             c = next_c;
-            result.set_default_or_bind(p, name_result, contents, false)?;
-            result.has_js_component_args = true;
+            match tag_kind {
+                TagKind::Slot if name_result.name == "name" => {
+                    result.set_slot_tag_name_attr(p, contents)?;
+                }
+                _ => {
+                    result.set_default_or_bind(&name_result.name, contents)?;
+                    result.has_js_component_args = true;
+                }
+            }
         }
         VueArgKind::Bind => {
-            let (content, next_c) = get_arg_js_value(p)?;
+            let (js_content, next_c) = get_arg_js_value(p)?;
             c = next_c;
-            result.set_default_or_bind(p, name_result, StaticOrJS::Bind(content), true)?;
-            result.has_js_component_args = true;
+
+            let contents = StaticOrJS::Bind(js_content);
+
+            match (name_result.target.as_ref(), tag_kind) {
+                (None, TagKind::Slot) => {
+                    result.set_slot_v_bind(p, contents)?;
+                    result.has_js_component_args = true;
+                }
+                (Some(target), TagKind::Slot) if target == "name" => {
+                    result.set_slot_tag_name_attr(p, contents)?;
+                }
+                (None, _) => return Err(ParserError::new(p, "expected a v-bind target")),
+                (Some(target), _) => {
+                    result.set_default_or_bind(target.as_str(), contents)?;
+                    result.has_js_component_args = true;
+                }
+            }
         }
         VueArgKind::On => {
             let (content, next_c) = get_arg_js_value(p)?;
@@ -177,23 +199,24 @@ pub fn try_parse(
                 ),
             );
 
-            if is_custom_component {
-                if let Some(target) = name_result.target.as_ref() {
-                    add_or_set(
-                        &mut result.attrs_or_props,
-                        (target.clone(), StaticOrJS::Bind(content.to_string())),
-                    );
-                } else {
-                    add_or_set(
-                        &mut result.attrs_or_props,
-                        (String::from("value"), StaticOrJS::Bind(content.to_string())),
-                    );
+            match tag_kind {
+                TagKind::CustomComponent => {
+                    if let Some(target) = name_result.target.as_ref() {
+                        add_or_set(
+                            &mut result.attrs_or_props,
+                            (target.clone(), StaticOrJS::Bind(content.to_string())),
+                        );
+                    } else {
+                        add_or_set(
+                            &mut result.attrs_or_props,
+                            (String::from("value"), StaticOrJS::Bind(content.to_string())),
+                        );
+                    }
                 }
-            } else {
-                add_or_set(
+                _ => add_or_set(
                     &mut result.dom_props,
                     (String::from("value"), content.to_string()),
-                );
+                ),
             }
 
             add_or_set(&mut result.directives, (name_result, content));

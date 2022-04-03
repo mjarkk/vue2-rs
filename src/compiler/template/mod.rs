@@ -1,27 +1,22 @@
 mod arg;
 pub mod to_js;
 
-use miette::SourceCode;
-
 use super::utils::is_space;
 use super::{js, Parser, ParserError, SourceLocation};
 
 // parse_tag is expected to be next to the open indicator (<) at the first character of the tag name
 // TODO support upper case tag names
 pub fn parse_tag(p: &mut Parser, v_else_allowed: bool) -> Result<Tag, ParserError> {
-    let mut tag = Tag {
-        type_: TagType::Open,
-        name: SourceLocation(p.current_char, 0),
-        args: VueTagArgs::new(),
-        is_custom_component: false,
-    };
+    // let mut tag = Tag {
+    //     type_: TagType::Open(),
+    //     name: SourceLocation(p.current_char, 0),
+    //     args: VueTagArgs::new(),
+    // };
 
     let mut is_close_tag = false;
     let mut c = p.must_seek_one()?;
 
     if c == '/' {
-        tag.type_ = TagType::Close;
-        tag.name.0 += 1;
         p.current_char += 1;
         is_close_tag = true;
     } else if c == '!' {
@@ -48,7 +43,6 @@ pub fn parse_tag(p: &mut Parser, v_else_allowed: bool) -> Result<Tag, ParserErro
                         type_: TagType::DocType,
                         name: SourceLocation::empty(),
                         args: VueTagArgs::new(),
-                        is_custom_component: false,
                     });
                 }
             }
@@ -60,7 +54,6 @@ pub fn parse_tag(p: &mut Parser, v_else_allowed: bool) -> Result<Tag, ParserErro
                         type_: TagType::Comment,
                         name: SourceLocation::empty(),
                         args: VueTagArgs::new(),
-                        is_custom_component: false,
                     });
                 }
             }
@@ -74,28 +67,45 @@ pub fn parse_tag(p: &mut Parser, v_else_allowed: bool) -> Result<Tag, ParserErro
         ));
     }
 
-    // Parse names
+    // Parse name
+    let mut name = SourceLocation(p.current_char, 0);
     loop {
         match p.must_read_one()? {
             'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' => {}
             _ => {
                 p.current_char -= 1;
-                tag.name.1 = p.current_char;
+                name.1 = p.current_char;
                 break;
             }
         };
     }
-
-    if tag.name.1 == 0 {
+    if name.1 == 0 {
         return Err(ParserError::new(p, "expected tag name"));
     }
 
-    tag.is_custom_component = is_tag_name_a_custom_component(p, &tag.name);
+    if is_close_tag {
+        // We don't parse args for closing tags, look for the tag closing identifier (>)
+        c = p.must_read_one_skip_spacing()?;
+        if c != '>' {
+            return Err(ParserError::new(
+                p,
+                format!("expected > but got '{}'", c.to_string()),
+            ));
+        }
+        return Ok(Tag {
+            type_: TagType::Close,
+            name: name,
+            args: VueTagArgs::new(),
+        });
+    }
+
+    let kind = tag_name_kind(p, &name);
+    let mut args = VueTagArgs::new();
 
     // Parse args
     loop {
         c = p.must_read_one_skip_spacing()?;
-        c = match arg::try_parse(p, c, &mut tag.args, v_else_allowed, tag.is_custom_component)? {
+        c = match arg::try_parse(p, c, &mut args, v_else_allowed, &kind)? {
             Some(next_char) => next_char,
             None => c,
         };
@@ -108,18 +118,27 @@ pub fn parse_tag(p: &mut Parser, v_else_allowed: bool) -> Result<Tag, ParserErro
                         "/ not allowed after name in closing tag",
                     ));
                 }
-                c = p.must_read_one_skip_spacing()?;
+                c = p.must_read_one()?;
                 if c != '>' {
                     return Err(ParserError::new(
                         p,
                         format!("expected > but got '{}'", c.to_string()),
                     ));
                 }
-                tag.type_ = TagType::OpenAndClose;
-                return Ok(tag);
+                return Ok(Tag {
+                    type_: TagType::OpenAndClose(kind),
+                    name: name,
+                    args: args,
+                });
             }
-            '>' => return Ok(tag),
-            c if is_space(c) => {}
+            '>' => {
+                return Ok(Tag {
+                    type_: TagType::Open(kind),
+                    name: name,
+                    args: args,
+                })
+            }
+            c if is_space(c) => {} // Ignore
             c => {
                 return Err(ParserError::new(
                     p,
@@ -134,8 +153,8 @@ pub fn parse_tag(p: &mut Parser, v_else_allowed: bool) -> Result<Tag, ParserErro
 pub enum TagType {
     DocType,
     Comment,
-    Open,
-    OpenAndClose,
+    Open(TagKind),
+    OpenAndClose(TagKind),
     Close,
 }
 
@@ -144,8 +163,8 @@ impl TagType {
         match self {
             Self::DocType => "DOCTYPE",
             Self::Comment => "<!-- .. -->",
-            Self::Open => "open",
-            Self::OpenAndClose => "inline",
+            Self::Open(_) => "open",
+            Self::OpenAndClose(_) => "inline",
             Self::Close => "close",
         }
     }
@@ -248,7 +267,7 @@ impl Child {
                                 });
                             }
                         }
-                        TagType::Open => {
+                        TagType::Open(_) => {
                             parents_tag_names.push(tag.name.clone());
 
                             let local_variables = tag.args.new_local_variables.as_ref();
@@ -301,7 +320,7 @@ impl Child {
                                 });
                             }
                         }
-                        TagType::OpenAndClose => {
+                        TagType::OpenAndClose(_) => {
                             resp.push(Self::Tag(tag, Vec::new()));
                         }
                         TagType::Comment | TagType::DocType => {} // Skip these tag
@@ -394,11 +413,20 @@ pub struct Tag {
     pub type_: TagType,
     pub name: SourceLocation,
     pub args: VueTagArgs,
-    pub is_custom_component: bool,
 }
 
-pub fn is_tag_name_a_custom_component(parser: &Parser, tag_name: &SourceLocation) -> bool {
-    let html_elements = vec![
+#[derive(Debug, Clone)]
+pub enum TagKind {
+    HtmlElement,
+    CustomComponent,
+    Slot,
+}
+
+pub fn tag_name_kind(parser: &Parser, tag_name: &SourceLocation) -> TagKind {
+    let slot_and_html_elements = vec![
+        // Check for slot
+        "slot".chars(),
+        //
         "a".chars(),
         "abbr".chars(),
         "acronym".chars(),
@@ -527,7 +555,11 @@ pub fn is_tag_name_a_custom_component(parser: &Parser, tag_name: &SourceLocation
         "wbr".chars(),
     ];
 
-    tag_name.eq_some(parser, false, html_elements).is_none()
+    match tag_name.eq_some(parser, false, slot_and_html_elements) {
+        Some(0) => TagKind::Slot,
+        Some(_) => TagKind::HtmlElement,
+        None => TagKind::CustomComponent,
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -608,6 +640,13 @@ pub struct VueTagArgs {
     // elements in the render function. This will make `$refs.myRef` become an array
     // refInFor = true
     pub ref_in_for: Option<bool>,
+
+    // slot_v_bind is a special operator for slot tags using v-bind
+    // (<slot v-bind="{foo: 'bar'}" />)
+    pub slot_v_bind: Option<StaticOrJS>,
+
+    // Contains the name attribute value in case of a <slot ..> tag
+    pub slot_tag_name_attr: Option<StaticOrJS>,
 }
 
 impl VueTagArgs {
@@ -628,6 +667,8 @@ impl VueTagArgs {
             key: None,
             ref_: None,
             ref_in_for: None,
+            slot_v_bind: None,
+            slot_tag_name_attr: None,
         }
     }
 
@@ -646,34 +687,28 @@ impl VueTagArgs {
         Some(self.has_attr_or_prop(name)?.is_static()?)
     }
 
-    fn set_default_or_bind(
-        &mut self,
-        p: &Parser,
-        key: arg::ParseArgNameResult,
-        value: StaticOrJS,
-        is_bind: bool,
-    ) -> Result<(), ParserError> {
-        let value_to_match = if is_bind {
-            if let Some(target) = key.target.as_ref() {
-                target.as_str()
-            } else {
-                return Err(ParserError::new(p, "expected a v-bind target"));
-            }
-        } else {
-            key.name.as_str()
-        };
-
-        match value_to_match {
+    fn set_default_or_bind(&mut self, key: &str, value: StaticOrJS) -> Result<(), ParserError> {
+        match key {
             "class" => self.class = Some(value),
             "style" => self.style = Some(value),
             "key" => self.key = Some(value),
             "ref" => self.ref_ = Some(value),
-            _ => add_or_set(
-                &mut self.attrs_or_props,
-                (value_to_match.to_string(), value),
-            ),
+            _ => add_or_set(&mut self.attrs_or_props, (key.to_string(), value)),
         };
-
+        Ok(())
+    }
+    fn set_slot_v_bind(&mut self, p: &Parser, to: StaticOrJS) -> Result<(), ParserError> {
+        if self.slot_v_bind.is_some() {
+            return Err(ParserError::new(p, "cannot set v-bind twice"));
+        }
+        self.slot_v_bind = Some(to);
+        Ok(())
+    }
+    fn set_slot_tag_name_attr(&mut self, p: &Parser, to: StaticOrJS) -> Result<(), ParserError> {
+        if self.slot_tag_name_attr.is_some() {
+            return Err(ParserError::new(p, "cannot set v-bind twice"));
+        }
+        self.slot_tag_name_attr = Some(to);
         Ok(())
     }
     fn set_modifier(&mut self, p: &Parser, to: arg::VueTagModifier) -> Result<(), ParserError> {

@@ -123,9 +123,9 @@ impl Parser {
                 '<' => {
                     let top_level_tag = self.parse_top_level_tag()?;
                     match top_level_tag.1.type_ {
-                        template::TagType::Comment | template::TagType::DocType | template::TagType::Open => {},
+                        template::TagType::Comment | template::TagType::DocType | template::TagType::Open(_) => {},
                         template::TagType::Close => return Err(ParserError::new(self, "found tag closure without open")),
-                        template::TagType::OpenAndClose => return Err(ParserError::new(self, "tag type not allowed on top level")),
+                        template::TagType::OpenAndClose(_) => return Err(ParserError::new(self, "tag type not allowed on top level")),
                     };
 
                     let lang: Option<&str> = top_level_tag.1.args.has_attr_or_prop_with_string("lang");

@@ -1,6 +1,7 @@
 use super::super::utils::write_str;
 use super::super::{utils, Parser, SourceLocation};
 use super::{arg::VueTagModifier, Child, StaticOrJS, VueTagArgs};
+use super::{TagKind, TagType};
 use std::slice::Iter;
 
 /*
@@ -256,7 +257,8 @@ pub fn child_to_js(
                 Some(1) => {
                     // Is <slot>
                     artifacts.is_slot = true;
-                    if let Some(name) = tag.args.has_attr_or_prop("name") {
+
+                    if let Some(name) = tag.args.slot_tag_name_attr.as_ref() {
                         write_str("_vm._t(", resp);
                         write_static_or_js(name, resp);
                     } else {
@@ -266,6 +268,16 @@ pub fn child_to_js(
                         write_str(",function(){return [", resp);
                         children_to_js(children, p, resp, false);
                         write_str("]}", resp);
+                    } else if tag.args.attrs_or_props.is_some() || tag.args.slot_v_bind.is_some() {
+                        write_str(",null", resp);
+                    }
+                    if let Some(props) = tag.args.attrs_or_props.as_ref() {
+                        write_str(",", resp);
+                        write_object(props, resp);
+                    }
+                    if let Some(data) = tag.args.slot_v_bind.as_ref() {
+                        resp.push(',');
+                        write_static_or_js(data, resp);
                     }
                     resp.push(')');
                 }
@@ -280,7 +292,14 @@ pub fn child_to_js(
                     write_str("_c('", resp);
                     tag.name.write_to_vec_escape(p, resp, '\'', '\\');
                     resp.push('\'');
-                    artifacts.is_custom_component = tag.is_custom_component;
+                    artifacts.is_custom_component = match &tag.type_ {
+                        TagType::Open(kind) | TagType::OpenAndClose(kind) => match kind {
+                            TagKind::Slot => true,
+                            TagKind::CustomComponent => true,
+                            TagKind::HtmlElement => false,
+                        },
+                        _ => true,
+                    };
                     if tag.args.has_js_component_args {
                         resp.push(',');
                         vue_tag_args_to_js(
@@ -414,21 +433,11 @@ pub fn vue_tag_args_to_js(
     if let Some(attrs) = args.attrs_or_props.as_ref() {
         object_entries.add(dest);
         if is_custom_component {
-            write_str("props:{", dest);
+            write_str("props:", dest);
         } else {
-            write_str("attrs:{", dest);
+            write_str("attrs:", dest);
         }
-        let mut attrs_entries = CommaSeparatedEntries::new();
-
-        for (key, value) in attrs {
-            attrs_entries.add(dest);
-
-            write_str_with_quotes(key, dest);
-            dest.push(':');
-            write_static_or_js(value, dest);
-        }
-
-        dest.push('}');
+        write_object(attrs, dest);
     }
 
     if let Some(dom_props) = args.dom_props.as_ref() {
@@ -613,4 +622,16 @@ fn write_static_or_js(value: &StaticOrJS, dest: &mut Vec<char>) {
         StaticOrJS::Bind(v) => write_str(&v, dest),
         StaticOrJS::Static(v) => write_str_with_quotes(&v, dest),
     }
+}
+
+fn write_object(key_values: &Vec<(String, StaticOrJS)>, dest: &mut Vec<char>) {
+    dest.push('{');
+    let mut entries = CommaSeparatedEntries::new();
+    for (key, value) in key_values {
+        entries.add(dest);
+        write_str_with_quotes(key, dest);
+        dest.push(':');
+        write_static_or_js(value, dest);
+    }
+    dest.push('}');
 }
