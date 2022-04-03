@@ -584,12 +584,15 @@ mod tests {
             );
 
             // Slot with default v-bind
-            template_to_js_eq("<slot name=\"test\" v-bind=\"{ test: 'ok' }\" />", "");
+            template_to_js_eq(
+                "<slot name=\"test\" v-bind=\"{ test: 'ok' }\" />",
+                "_vm._t(\"test\",null,{ test: 'ok' })",
+            );
 
             // Slot with targetted v-bind
             template_to_js_eq(
                 "<slot name=\"test\" v-bind:bar=\"'bar'\" v-bind:foo=\"'foo'\" />",
-                "",
+                "_vm._t(\"test\",null,{\"bar\":'bar',\"foo\":'foo'})",
             );
 
             // Slot with combined default v-bind and targetted

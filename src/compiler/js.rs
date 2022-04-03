@@ -122,6 +122,28 @@ pub fn compile_script_content(p: &mut Parser) -> Result<(), ParserError> {
     }
 }
 
+// parses one js action
+// var foo = {a: 1, b: 2}
+//           ^^^^^^^^^^^^
+// var foo = () => something_else
+//                 ^^^^^^^^^^^^^^
+// <div v-bind:foo="a_var + another_var" />
+//                  ^^^^^^^^^^^^^^^^^^^
+pub fn parse_inline(
+    p: &mut Parser,
+    closure: char,
+    global_references: &mut Option<Vec<SourceLocation>>,
+) {
+    // TODO
+}
+
+// parses a block of javascript.
+// This if for example the body of a function:
+// function () { var a = 1; console.log(a) }
+//               ^^^^^^^^^^^^^^^^^^^^^^^^
+// Or the contents of a script tag:
+// <script> var a = 1; console.log(a) </script>
+//          ^^^^^^^^^^^^^^^^^^^^^^^^
 pub fn parse_block_like(
     p: &mut Parser,
     closure: char,
