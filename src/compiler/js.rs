@@ -46,7 +46,7 @@ pub fn add_vm_references(
 pub fn parse_template_var(p: &mut Parser) -> Result<Vec<SourceLocation>, ParserError> {
     let mut global_references: Option<Vec<SourceLocation>> = Some(Vec::with_capacity(1));
 
-    parse_block_like(p, '}', &mut global_references)?;
+    parse_inline(p, '}', &mut global_references, false)?;
 
     let c = p.must_read_one()?;
     if c != '}' {
@@ -65,14 +65,14 @@ pub fn parse_template_arg(
     closure: char,
 ) -> Result<Vec<SourceLocation>, ParserError> {
     let mut global_references: Option<Vec<SourceLocation>> = Some(Vec::with_capacity(1));
-    parse_block_like(p, closure, &mut global_references)?;
+    parse_inline(p, closure, &mut global_references, false)?;
     Ok(global_references.unwrap())
 }
 
 pub fn compile_script_content(p: &mut Parser) -> Result<(), ParserError> {
     loop {
         match p.must_read_one()? {
-            c if handle_common(p, c, &mut None)? => {}
+            c if handle_common(p, c, &mut None, false)? => {}
 
             // Check if this is the script tag end </script>
             '<' => {
@@ -122,6 +122,11 @@ pub fn compile_script_content(p: &mut Parser) -> Result<(), ParserError> {
     }
 }
 
+enum ParseInlineReturnReason {
+    Closure,
+    Comma,
+}
+
 // parses one js action
 // var foo = {a: 1, b: 2}
 //           ^^^^^^^^^^^^
@@ -129,12 +134,25 @@ pub fn compile_script_content(p: &mut Parser) -> Result<(), ParserError> {
 //                 ^^^^^^^^^^^^^^
 // <div v-bind:foo="a_var + another_var" />
 //                  ^^^^^^^^^^^^^^^^^^^
-pub fn parse_inline(
+fn parse_inline(
     p: &mut Parser,
     closure: char,
     global_references: &mut Option<Vec<SourceLocation>>,
-) {
-    // TODO
+    return_on_comma: bool,
+) -> Result<ParseInlineReturnReason, ParserError> {
+    loop {
+        let c = p.must_read_one()?;
+        match c {
+            c if c == closure => return Ok(ParseInlineReturnReason::Closure),
+            c if handle_common(p, c, global_references, true)? => {}
+            c if c.is_ascii_lowercase() || c.is_ascii_uppercase() || c > '}' => {
+                // Start of word, this might be a var or a static method
+                parse_potential_var(p, global_references)?;
+            }
+            ',' if return_on_comma => return Ok(ParseInlineReturnReason::Comma),
+            _ => {}
+        }
+    }
 }
 
 // parses a block of javascript.
@@ -152,11 +170,30 @@ pub fn parse_block_like(
     loop {
         match p.must_read_one()? {
             c if c == closure => return Ok(()),
-            c if handle_common(p, c, global_references)? => {}
+            c if handle_common(p, c, global_references, false)? => {}
             c if c.is_ascii_lowercase() || c.is_ascii_uppercase() || c > '}' => {
                 // Start of word, this might be a var or a static method
                 parse_potential_var(p, global_references)?;
             }
+            _ => {}
+        }
+    }
+}
+
+// parses a js object structure
+// {foo: 1, bar: 'a'}
+fn parse_object(
+    p: &mut Parser,
+    global_references: &mut Option<Vec<SourceLocation>>,
+) -> Result<(), ParserError> {
+    loop {
+        match p.must_read_one()? {
+            '}' => return Ok(()),
+            c if handle_common(p, c, global_references, true)? => {}
+            ':' => match parse_inline(p, '}', global_references, true)? {
+                ParseInlineReturnReason::Closure => return Ok(()),
+                ParseInlineReturnReason::Comma => continue,
+            },
             _ => {}
         }
     }
@@ -329,6 +366,7 @@ fn handle_common(
     p: &mut Parser,
     c: char,
     global_references: &mut Option<Vec<SourceLocation>>,
+    is_inline: bool,
 ) -> Result<bool, ParserError> {
     match c {
         // Parse string
@@ -348,15 +386,19 @@ fn handle_common(
         '/' if parse_comment(p)? => Ok(true),
         // Parse block like
         '{' => {
-            parse_block_like(p, '}', global_references)?;
+            if is_inline {
+                parse_object(p, global_references)?;
+            } else {
+                parse_block_like(p, '}', global_references)?;
+            }
             Ok(true)
         }
         '(' => {
-            parse_block_like(p, ')', global_references)?;
+            parse_inline(p, ')', global_references, false)?;
             Ok(true)
         }
         '[' => {
-            parse_block_like(p, ']', global_references)?;
+            parse_inline(p, ']', global_references, false)?;
             Ok(true)
         }
         _ => Ok(false),
